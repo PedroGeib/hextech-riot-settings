@@ -1,0 +1,79 @@
+{
+  "name": "riot-settings-orchestrator",
+  "version": "1.0.0",
+  "description": "Desktop app for orchestrating League of Legends and TFT configuration files.",
+  "main": "electron/main.js",
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon --watch electron --watch renderer --watch src --ext js,html,css --exec electron .",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest --config jest.config.js",
+    "start": "nodemon --watch electron --watch renderer --watch src --ext js,html,css --exec electron .",
+    "build": "electron-builder --win",
+    "tauri": "tauri"
+  },
+  "build": {
+    "appId": "com.riot.settings.orchestrator",
+    "productName": "RiotSettingsOrchestrator",
+    "compression": "maximum",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "src/**/*",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Riot Settings Orchestrator"
+    }
+  },
+  "keywords": [
+    "league-of-legends",
+    "tft",
+    "riot-games",
+    "config",
+    "settings",
+    "electron"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "ini": "^5.0.0",
+    "js-yaml": "^4.1.0",
+    "lodash-es": "^4.17.21"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "@jest/transform": "^29.7.0",
+    "@tauri-apps/cli": "^2.11.4",
+    "electron": "^35.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-reload": "^2.0.0-alpha.1",
+    "jest": "^29.7.0",
+    "nodemon": "^3.1.14"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
