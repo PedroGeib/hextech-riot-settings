@@ -118,7 +118,7 @@ tests/               Frontend unit tests (node:test)
 
 ## License
 
-MIT
+[MIT](LICENSE)
 
 ## Disclaimer
 
