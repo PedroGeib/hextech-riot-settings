@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Rust / Tauri build output
+target/
+target-*/
+gen/schemas/
+
+# Release binaries
+dist/
+dist-release/
+
+# Local tooling and personal scratch files
+.aider*
+scratch/

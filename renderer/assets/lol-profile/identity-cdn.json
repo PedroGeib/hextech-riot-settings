@@ -1,0 +1,10 @@
+{
+  "_comment": [
+    "Manifest vazio por design. Preencha seguindo o método em HOW_TO_EXTRACT_IDENTITY_URLS.md.",
+    "Cada item: { id, name, url, unlocked }. Apenas URLs coletadas via DevTools no LoL client.",
+    "Não comitamos URLs aqui por padrão (cópia não-distribuível). Você popula localmente."
+  ],
+  "version": 1,
+  "bandeiras": [],
+  "molduras": []
+}
