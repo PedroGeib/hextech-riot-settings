@@ -7,9 +7,9 @@ import { booleanValue, isChecked, valueKind } from '../lib/settings-model.js';
 import { confirmAction, errorMessage, toast, withBusyButtons } from '../lib/ui.js';
 
 const FILES = [
-  { kind: 'gameCfg', label: 'game.cfg (in-game video, audio and interface)' },
-  { kind: 'persistedSettings', label: 'PersistedSettings.json (keybindings, cloud synced)' },
-  { kind: 'clientSettings', label: 'LeagueClientSettings.yaml (Riot Client)' },
+  { kind: 'gameCfg', name: 'game.cfg', label: 'game.cfg (vídeo, áudio e interface do jogo)' },
+  { kind: 'persistedSettings', name: 'PersistedSettings.json', label: 'PersistedSettings.json (atalhos, sincronizado na nuvem)' },
+  { kind: 'clientSettings', name: 'LeagueClientSettings.yaml', label: 'LeagueClientSettings.yaml (Riot Client)' },
 ];
 
 const encodePath = (parts) => parts.map((p) => encodeURIComponent(String(p))).join('/');
@@ -36,7 +36,7 @@ function buildGroups(kind, data) {
       for (const [key, value] of Object.entries(node ?? {})) {
         const childPath = [...path, key];
         if (isPlainObject(value) && Object.keys(value).length) walk(value, childPath);
-        else add(childPath.slice(0, Math.min(2, childPath.length - 1)).join(' › ') || 'root', { path: childPath, name: childPath.slice(2).join('.') || key, value });
+        else add(childPath.slice(0, Math.min(2, childPath.length - 1)).join(' › ') || 'raiz', { path: childPath, name: childPath.slice(2).join('.') || key, value });
       }
     };
     walk(data, []);
@@ -76,7 +76,7 @@ function inputHtml(kind, row) {
     case 'json':
       return `<input type="text" ${attrs} style="width: 320px; font-family: monospace;" value="${escapeHtml(JSON.stringify(row.value))}" />`;
     case 'null':
-      return `<input type="text" ${attrs} style="width: 320px;" placeholder="(empty)" value="" />`;
+      return `<input type="text" ${attrs} style="width: 320px;" placeholder="(vazio)" value="" />`;
     default:
       return `<input type="text" ${attrs} style="width: 320px;" value="${escapeHtml(row.value)}" />`;
   }
@@ -87,49 +87,49 @@ export function render() {
     <div id="raw-configs-view" class="page-container animate-fade-in">
       <div class="page-header flex justify-between items-center mb-6">
         <div>
-          <h1 class="page-title text-cyan">All Config Editor</h1>
-          <p class="page-subtitle">Every setting stored in the configuration files</p>
+          <h1 class="page-title text-cyan">Todas as configurações</h1>
+          <p class="page-subtitle">Cada valor guardado nos arquivos de configuração</p>
         </div>
-        <button data-toggle-mode class="btn btn--secondary">Show Raw Text</button>
+        <button data-toggle-mode class="btn btn--secondary">Ver texto bruto</button>
       </div>
 
       <div class="card mb-4">
         <div class="card-body flex flex-wrap gap-4 items-center justify-between">
           <div class="flex items-center gap-4" style="flex-wrap: wrap;">
             <div class="flex flex-col">
-              <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">Config file</span>
-              <select data-file class="select-control" style="width: 320px; height: 38px;">
+              <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">Arquivo</span>
+              <select data-file class="select-control" style="width: 340px; height: 38px;">
                 ${FILES.map((f) => `<option value="${f.kind}">${escapeHtml(f.label)}</option>`).join('')}
               </select>
             </div>
             <div class="flex flex-col">
-              <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">File status</span>
+              <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">Situação</span>
               <span class="status-badge status-badge--offline" data-lock style="margin-top: 8px;">
                 <span class="status-badge__dot"></span>
-                <span class="status-badge__text">Checking…</span>
+                <span class="status-badge__text">Verificando…</span>
               </span>
             </div>
           </div>
           <div class="flex flex-col" data-search-wrapper style="flex: 1; max-width: 400px; min-width: 250px;">
-            <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">Search settings</span>
-            <input type="search" data-search class="input-control" placeholder="Search by setting or section name…" style="height: 38px;" />
+            <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">Buscar</span>
+            <input type="search" data-search class="input-control" placeholder="Buscar por configuração ou seção…" style="height: 38px;" />
           </div>
         </div>
       </div>
 
-      <div data-form class="flex flex-col gap-6"></div>
+      <div data-form class="flex flex-col"></div>
 
       <div data-raw class="card mb-4" style="display: none;">
-        <div class="card-header"><h2 class="card-title">Raw file</h2></div>
+        <div class="card-header"><h2 class="card-title">Texto do arquivo</h2></div>
         <div class="card-body">
-          <textarea data-raw-text class="input-control w-full" spellcheck="false" aria-label="Raw file contents" style="height: 520px; font-family: Consolas, 'Courier New', monospace; font-size: 13px; line-height: 1.5; padding: 16px; background-color: rgba(10, 14, 26, 0.5); border: 1px solid var(--glass-border); border-radius: var(--radius-md); color: var(--text-primary); resize: vertical; white-space: pre;"></textarea>
+          <textarea data-raw-text class="code-editor code-editor--tall" spellcheck="false" aria-label="Conteúdo do arquivo"></textarea>
         </div>
       </div>
 
       <div class="card" style="margin-top: 24px;">
         <div class="card-body flex justify-between items-center py-4" style="gap: 16px;">
-          <div class="text-sm text-muted" data-path-label style="font-family: monospace; overflow-wrap: anywhere;">Path: …</div>
-          <button data-save class="btn btn--primary" style="flex-shrink: 0;">Save & Apply</button>
+          <div class="text-sm text-muted" data-path-label style="font-family: monospace; overflow-wrap: anywhere;">Caminho: …</div>
+          <button data-save class="btn btn--primary" style="flex-shrink: 0;">Salvar e aplicar</button>
         </div>
       </div>
     </div>`;
@@ -154,17 +154,17 @@ export function mount() {
   let rawMode = false;
   let dirty = false;
 
-  const fileLabel = () => FILES.find((f) => f.kind === kind).label.split(' ')[0];
+  const fileLabel = () => FILES.find((f) => f.kind === kind).name;
 
   async function updateLockBadge() {
     const badge = $('[data-lock]');
     try {
       const locked = await api.lock.isReadOnly(loaded.path);
       badge.className = `status-badge status-badge--${locked ? 'locked' : 'online'}`;
-      badge.querySelector('.status-badge__text').textContent = locked ? 'Locked (read-only)' : 'Writable';
+      badge.querySelector('.status-badge__text').textContent = locked ? 'Travado (somente leitura)' : 'Pode ser alterado';
     } catch {
       badge.className = 'status-badge status-badge--offline';
-      badge.querySelector('.status-badge__text').textContent = 'Unknown';
+      badge.querySelector('.status-badge__text').textContent = 'Desconhecido';
     }
   }
 
@@ -191,7 +191,7 @@ export function mount() {
           </div>`,
           )
           .join('')
-      : '<div class="empty-state"><p>This file has no settings.</p></div>';
+      : '<div class="empty-state"><p>Este arquivo não tem configurações.</p></div>';
     applySearch();
   }
 
@@ -216,7 +216,7 @@ export function mount() {
       try {
         loaded.data = api.configs.parse(kind, rawText.value);
       } catch (err) {
-        toast(`The text is not valid ${fileLabel()}: ${err.message}`, 'error');
+        toast(`O texto não é um ${fileLabel()} válido: ${err.message}`, 'error');
         return;
       }
       renderForm();
@@ -225,7 +225,7 @@ export function mount() {
     form.style.display = rawMode ? 'none' : 'flex';
     rawCard.style.display = rawMode ? 'block' : 'none';
     $('[data-search-wrapper]').style.visibility = rawMode ? 'hidden' : 'visible';
-    modeButton.textContent = rawMode ? 'Show Form' : 'Show Raw Text';
+    modeButton.textContent = rawMode ? 'Ver formulário' : 'Ver texto bruto';
   }
 
   async function loadFile() {
@@ -235,7 +235,7 @@ export function mount() {
       loaded = await api.configs.read(kind);
       if (!root.isConnected) return;
       dirty = false;
-      $('[data-path-label]').textContent = `Path: ${loaded.path}`;
+      $('[data-path-label]').textContent = `Caminho: ${loaded.path}`;
       saveButton.disabled = false;
       if (rawMode) rawText.value = loaded.raw;
       else renderForm();
@@ -243,7 +243,7 @@ export function mount() {
     } catch (err) {
       loaded = null;
       saveButton.disabled = true;
-      form.innerHTML = `<div class="empty-state"><h3>Could not load this file</h3><p>${escapeHtml(errorMessage(err))}</p></div>`;
+      form.innerHTML = `<div class="empty-state"><h3>Não foi possível carregar este arquivo</h3><p>${escapeHtml(errorMessage(err))}</p></div>`;
       if (rawMode) setMode(false);
     }
   }
@@ -266,7 +266,7 @@ export function mount() {
         if (kind === 'clientSettings') {
           value = Number(input.value);
           if (input.value === '' || Number.isNaN(value)) {
-            toast('Enter a valid number', 'error');
+            toast('Digite um número válido', 'error');
             return;
           }
         } else {
@@ -277,7 +277,7 @@ export function mount() {
         try {
           value = JSON.parse(input.value);
         } catch (err) {
-          toast(`Invalid value: ${err.message}`, 'error');
+          toast(`Valor inválido: ${err.message}`, 'error');
           return;
         }
         break;
@@ -301,9 +301,9 @@ export function mount() {
   fileSelect.addEventListener('change', async () => {
     if (dirty) {
       const discard = await confirmAction({
-        title: 'Discard changes?',
-        message: `You have unsaved changes in ${fileLabel()}. Switching files will discard them.`,
-        confirmText: 'Discard',
+        title: 'Descartar alterações?',
+        message: `Há alterações não salvas em ${fileLabel()}. Trocar de arquivo vai descartá-las.`,
+        confirmText: 'Descartar',
         danger: true,
       });
       if (!discard) {
@@ -321,27 +321,27 @@ export function mount() {
       try {
         data = api.configs.parse(kind, rawText.value);
       } catch (err) {
-        toast(`The text is not valid ${fileLabel()}: ${err.message}`, 'error');
+        toast(`O texto não é um ${fileLabel()} válido: ${err.message}`, 'error');
         return;
       }
     }
 
     const confirmed = await confirmAction({
-      title: 'Save file',
-      message: `Save your changes to ${loaded.path}?\nInvalid values can break game preferences, so a backup is saved first.`,
-      confirmText: 'Save',
+      title: 'Salvar arquivo',
+      message: `Salvar as alterações em ${loaded.path}?\nValores inválidos podem estragar as preferências do jogo, por isso um backup é salvo antes.`,
+      confirmText: 'Salvar',
     });
     if (!confirmed) return;
 
-    await withBusyButtons([saveButton], 'Saving…', async () => {
+    await withBusyButtons([saveButton], 'Salvando…', async () => {
       try {
         await api.status.assertGameClosed();
-        await api.history.saveSnapshot(`Before editing ${fileLabel()}`);
+        await api.history.saveSnapshot(`Antes de editar o ${fileLabel()}`);
         await api.configs.replace(kind, data);
-        toast(`${fileLabel()} saved`, 'success');
+        toast(`${fileLabel()} salvo`, 'success');
         dirty = false;
       } catch (err) {
-        toast(`Could not save: ${errorMessage(err)}`, 'error');
+        toast(`Não foi possível salvar: ${errorMessage(err)}`, 'error');
       }
     });
     if (!dirty) await loadFile();

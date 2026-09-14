@@ -20,27 +20,28 @@ const SYNC_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" s
 const COPY_ICON = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>`;
 
 const KEYMAP_ACTIONS = [
-  ['evtCastSpell1', 'Cast Spell 1 (Q)'],
-  ['evtCastSpell2', 'Cast Spell 2 (W)'],
-  ['evtCastSpell3', 'Cast Spell 3 (E)'],
-  ['evtCastSpell4', 'Cast Spell 4 (R)'],
-  ['evtCastAvatarSpell1', 'Summoner Spell 1 (D)'],
-  ['evtCastAvatarSpell2', 'Summoner Spell 2 (F)'],
-  ['evtUseItem1', 'Use Item 1'],
-  ['evtUseItem2', 'Use Item 2'],
-  ['evtUseItem3', 'Use Item 3'],
-  ['evtUseItem4', 'Use Item 4'],
-  ['evtUseItem5', 'Use Item 5'],
-  ['evtUseItem6', 'Use Item 6'],
-  ['evtUseVisionItem', 'Use Ward'],
-  ['evtCameraSnap', 'Center Camera'],
-  ['evtPlayerStopPosition', 'Stop Action'],
-  ['evtPlayerAttackMove', 'Attack Move'],
+  ['evtCastSpell1', 'Habilidade 1 (Q)'],
+  ['evtCastSpell2', 'Habilidade 2 (W)'],
+  ['evtCastSpell3', 'Habilidade 3 (E)'],
+  ['evtCastSpell4', 'Habilidade 4 (R)'],
+  ['evtCastAvatarSpell1', 'Feitiço de invocador 1 (D)'],
+  ['evtCastAvatarSpell2', 'Feitiço de invocador 2 (F)'],
+  ['evtUseItem1', 'Usar item 1'],
+  ['evtUseItem2', 'Usar item 2'],
+  ['evtUseItem3', 'Usar item 3'],
+  ['evtUseItem4', 'Usar item 4'],
+  ['evtUseItem5', 'Usar item 5'],
+  ['evtUseItem6', 'Usar item 6'],
+  ['evtUseVisionItem', 'Usar sentinela'],
+  ['evtCameraSnap', 'Centralizar câmera'],
+  ['evtPlayerStopPosition', 'Parar ação'],
+  ['evtPlayerAttackMove', 'Ataque em movimento'],
 ];
 const KEYMAP_ROWS = [['1', '2', '3', '4', '5', '6', '7'], ['Q', 'W', 'E', 'R'], ['A', 'S', 'D', 'F'], ['Space']];
 const HIGHLIGHTED_KEYS = new Set(['Q', 'W', 'E', 'R', 'D', 'F']);
 
 const actionLabel = (name) => KEYMAP_ACTIONS.find(([id]) => id === name)?.[1] ?? name;
+const keyLabel = (key) => (key === 'Space' ? 'Espaço' : key);
 const controlKeys = (control) => control.keys ?? [control.key];
 
 function iniValue(ini, key) {
@@ -56,7 +57,7 @@ function displayValue(control, value) {
     case 'range':
       return Number(value).toFixed(2);
     case 'toggle':
-      return isChecked(value) ? 'ON' : 'OFF';
+      return isChecked(value) ? 'LIGADO' : 'DESLIGADO';
     case 'select':
       return control.options.find((o) => o.value === String(value))?.label ?? String(value);
     default:
@@ -66,10 +67,10 @@ function displayValue(control, value) {
 
 function compareBadgeHtml(text, different, copyAttribute) {
   return `
-    <div class="comparison-badge flex items-center gap-2" style="background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border); padding: 4px 10px; border-radius: var(--radius-sm);">
-      <span class="text-xs text-muted" style="font-size: 10px; text-transform: uppercase;">Profile:</span>
-      <span class="font-mono text-xs ${different ? 'text-amber font-semibold' : 'text-emerald'}">${escapeHtml(text)}</span>
-      ${different ? `<button class="btn btn--secondary btn--sm" ${copyAttribute} title="Use this value" style="padding: 2px 6px; font-size: 10px; margin-left: 4px;">${COPY_ICON}</button>` : ''}
+    <div class="comparison-badge">
+      <span class="comparison-badge__label">Perfil</span>
+      <span class="comparison-badge__value ${different ? 'comparison-badge__value--diff' : ''}">${escapeHtml(text)}</span>
+      ${different ? `<button type="button" class="comparison-badge__copy" ${copyAttribute} title="Usar este valor" aria-label="Usar este valor">${COPY_ICON}</button>` : ''}
     </div>`;
 }
 
@@ -81,9 +82,9 @@ function controlInputHtml(control, index) {
     case 'resolution':
       return `
         <div class="flex items-center gap-2">
-          <input type="number" min="1" step="1" class="input-control" style="width: 90px; text-align: center;" placeholder="Width" aria-label="Width" ${attrs(0)} />
+          <input type="number" min="1" step="1" class="input-control" style="width: 90px; text-align: center;" placeholder="Largura" aria-label="Largura" ${attrs(0)} />
           <span class="text-muted">x</span>
-          <input type="number" min="1" step="1" class="input-control" style="width: 90px; text-align: center;" placeholder="Height" aria-label="Height" ${attrs(1)} />
+          <input type="number" min="1" step="1" class="input-control" style="width: 90px; text-align: center;" placeholder="Altura" aria-label="Altura" ${attrs(1)} />
         </div>`;
     case 'select':
       return `
@@ -138,31 +139,32 @@ function standardCardsHtml(cards) {
 
 function keymapperHtml() {
   const keyButton = (key) => {
-    const width = key === 'Space' ? '120px' : '36px';
-    const accent = HIGHLIGHTED_KEYS.has(key) ? 'font-weight: 600; color: var(--accent-cyan); border-color: var(--accent-cyan);' : '';
-    return `<button class="kbd-key btn" data-key="${key}" style="width: ${width}; height: 36px; padding: 0; font-family: monospace; font-size: 13px; ${accent}">${key}</button>`;
+    const classes = ['kbd-key', key === 'Space' && 'kbd-key--wide', HIGHLIGHTED_KEYS.has(key) && 'kbd-key--accent'].filter(Boolean).join(' ');
+    return `<button type="button" class="${classes}" data-key="${key}">${keyLabel(key)}</button>`;
   };
   return `
-    <div class="card mb-4">
-      <div class="card-header"><h3 class="card-title text-violet">Interactive Keymapper</h3></div>
-      <div class="card-body">
-        <p class="text-sm text-muted mb-4">Click a key to see what it does and bind it to another action.</p>
-        <div class="visual-keyboard" style="display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 480px; margin: 0 auto; background: rgba(0,0,0,0.2); padding: 12px; border-radius: var(--radius-lg); border: 1px solid var(--glass-border);">
-          ${KEYMAP_ROWS.map((row) => `<div style="display: flex; gap: 6px; justify-content: center;">${row.map(keyButton).join('')}</div>`).join('')}
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3 class="card-title">Mapeador de teclas</h3>
+          <p class="card-subtitle">Clique em uma tecla para ver o que ela faz e vinculá-la a outra ação.</p>
         </div>
-        <div data-keymap-info style="margin-top: 16px; background: rgba(255,255,255,0.02); padding: 12px 16px; border-radius: var(--radius-md); border: 1px solid var(--glass-border); display: none; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
-          <div>
-            <span style="color: var(--text-muted); font-size: 11px;">Selected key:</span>
-            <kbd data-keymap-key style="background: var(--bg-tertiary); color: var(--accent-cyan); padding: 3px 8px; border-radius: 4px; font-family: monospace; font-weight: bold; margin-left: 4px; border: 1px solid var(--glass-border);"></kbd>
-            <span style="color: var(--text-muted); font-size: 11px; margin-left: 12px;">Bound to:</span>
-            <span data-keymap-action class="font-semibold text-emerald" style="margin-left: 4px;"></span>
-          </div>
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <select data-keymap-select class="select-control" style="height: 32px; font-size: 12px; width: 180px;">
-              ${KEYMAP_ACTIONS.map(([id, label]) => `<option value="${id}">${escapeHtml(label)}</option>`).join('')}
-            </select>
-            <button data-keymap-rebind class="btn btn--primary btn--sm" style="padding: 4px 10px; font-size: 11px; height: 32px;">Rebind</button>
-          </div>
+      </div>
+      <div class="keyboard">
+        ${KEYMAP_ROWS.map((row) => `<div class="keyboard__row">${row.map(keyButton).join('')}</div>`).join('')}
+      </div>
+      <div class="keymap-info" data-keymap-info>
+        <div class="keymap-info__binding">
+          <span class="keymap-info__label">Tecla</span>
+          <kbd class="kbd-hint" data-keymap-key></kbd>
+          <span class="keymap-info__label">Ação</span>
+          <span data-keymap-action class="font-semibold text-emerald"></span>
+        </div>
+        <div class="card-actions">
+          <select data-keymap-select class="select-control" style="width: 220px;">
+            ${KEYMAP_ACTIONS.map(([id, label]) => `<option value="${id}">${escapeHtml(label)}</option>`).join('')}
+          </select>
+          <button data-keymap-rebind class="btn btn--primary">Vincular</button>
         </div>
       </div>
     </div>`;
@@ -209,7 +211,7 @@ export function createGameSettingsView(config) {
             <h1 class="page-title text-cyan">${config.icon}${escapeHtml(config.title)}</h1>
             <p class="page-subtitle">${escapeHtml(config.subtitle)}</p>
           </div>
-          <button data-save class="btn btn--primary flex items-center" style="padding: 10px 20px; font-weight: 600;">${SAVE_ICON}<span data-save-label>Save & Apply</span></button>
+          <button data-save class="btn btn--primary flex items-center" style="padding: 10px 20px; font-weight: 600;">${SAVE_ICON}<span data-save-label>Salvar e aplicar</span></button>
         </div>
 
         <div class="card mb-4">
@@ -217,14 +219,14 @@ export function createGameSettingsView(config) {
             <div class="flex items-center gap-4 flex-wrap">
               ${config.profileTarget ? `
               <div class="flex flex-col">
-                <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">Settings to edit</span>
-                <select data-target class="select-control" style="width: 250px; height: 38px;"><option value="">Current game files</option></select>
+                <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">O que editar</span>
+                <select data-target class="select-control" style="width: 250px; height: 38px;"><option value="">Arquivos atuais do jogo</option></select>
               </div>` : ''}
               <div class="flex flex-col">
-                <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">Compare with profile</span>
-                <select data-compare class="select-control" style="width: 250px; height: 38px;"><option value="">None</option></select>
+                <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">Comparar com perfil</span>
+                <select data-compare class="select-control" style="width: 250px; height: 38px;"><option value="">Nenhum</option></select>
               </div>
-              <button data-sync-all class="btn btn--secondary flex items-center" style="display: none; height: 38px; margin-top: 18px;">${SYNC_ICON}<span data-sync-label>Sync All Differences</span></button>
+              <button data-sync-all class="btn btn--secondary flex items-center" style="display: none; height: 38px; margin-top: 18px;">${SYNC_ICON}<span data-sync-label>Copiar diferenças</span></button>
             </div>
           </div>
         </div>
@@ -233,21 +235,21 @@ export function createGameSettingsView(config) {
         ${standardCardsHtml(config.cards)}
 
         <div class="card mb-4">
-          <div class="card-header"><h2 class="card-title text-cyan">Advanced & Additional Settings</h2></div>
+          <div class="card-header"><h2 class="card-title text-cyan">Configurações avançadas</h2></div>
           <div class="card-body py-2">
             <div class="flex flex-col mb-4">
-              <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">Search advanced options</span>
-              <input type="search" data-search class="input-control" placeholder="Search by setting or section name…" style="height: 38px;" />
+              <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">Buscar nas opções avançadas</span>
+              <input type="search" data-search class="input-control" placeholder="Buscar por configuração ou seção…" style="height: 38px;" />
             </div>
           </div>
         </div>
 
-        <div data-advanced class="flex flex-col gap-6"></div>
+        <div data-advanced></div>
 
         <div class="card" style="margin-top: 24px;">
           <div class="card-body flex justify-between items-center py-4">
-            <div class="text-sm text-muted" data-target-description>${escapeHtml(config.gameName)} config files</div>
-            <button data-save class="btn btn--primary">${SAVE_ICON}<span data-save-label>Save & Apply</span></button>
+            <div class="text-sm text-muted" data-target-description>Arquivos de configuração do ${escapeHtml(config.gameName)}</div>
+            <button data-save class="btn btn--primary">${SAVE_ICON}<span data-save-label>Salvar e aplicar</span></button>
           </div>
         </div>
       </div>`;
@@ -293,21 +295,23 @@ export function createGameSettingsView(config) {
       return Object.keys(other).filter((k) => current[k] !== undefined && !valuesEqual(current[k], other[k]));
     }
 
+    const saveLabel = () => (state?.targetName ? 'Salvar perfil' : 'Salvar e aplicar');
+
     function markDirty() {
       dirty = true;
       root.querySelectorAll('[data-save-label]').forEach((el) => {
-        el.textContent = `${state?.targetName ? 'Save Profile' : 'Save & Apply'} •`;
+        el.textContent = `${saveLabel()} •`;
       });
     }
 
     function updateSaveLabels() {
       root.querySelectorAll('[data-save-label]').forEach((el) => {
-        el.textContent = state?.targetName ? 'Save Profile' : 'Save & Apply';
+        el.textContent = saveLabel();
       });
       const description = $('[data-target-description]');
       description.textContent = state?.targetName
-        ? `Editing saved profile "${state.targetName}" (game files are not touched)`
-        : `${config.gameName} config files`;
+        ? `Editando o perfil salvo "${state.targetName}" (os arquivos do jogo não são alterados)`
+        : `Arquivos de configuração do ${config.gameName}`;
       saveButtons.forEach((b) => (b.disabled = !state));
     }
 
@@ -327,7 +331,7 @@ export function createGameSettingsView(config) {
         const row = root.querySelector(`[data-row="${index}"]`);
         const missing = controlKeys(control).some((key) => iniValue(state?.ini, key) === undefined);
         row.classList.toggle('setting-row--missing', missing);
-        row.title = missing ? 'Not present in game.cfg yet. Change it once in game to create it.' : '';
+        row.title = missing ? 'Ainda não existe no game.cfg. Altere uma vez dentro do jogo para criá-la.' : '';
 
         controlKeys(control).forEach((key, part) => {
           const input = root.querySelector(`[data-control="${index}"][data-part="${part}"]`);
@@ -382,7 +386,7 @@ export function createGameSettingsView(config) {
             break;
           case 'resolution':
             if (!/^\d+$/.test(input.value) || Number(input.value) < 1) {
-              toast('Resolution must be a positive whole number', 'error');
+              toast('A resolução precisa ser um número inteiro positivo', 'error');
               input.value = original ?? '';
               return;
             }
@@ -429,11 +433,11 @@ export function createGameSettingsView(config) {
                   const compared = compare ? other[key] : undefined;
                   const different = compared !== undefined && !valuesEqual(value, compared);
                   return `
-                    <div class="setting-row ${different ? 'setting-row--diff' : ''}" data-search-row="${escapeHtml(name.toLowerCase())}" style="height: auto; min-height: 48px; padding: 10px 0;">
-                      <div class="setting-label" style="flex: 1;">
-                        <span class="setting-title" style="font-family: monospace; font-size: 13px;">${escapeHtml(name)}</span>
+                    <div class="setting-row setting-row--compact ${different ? 'setting-row--diff' : ''}" data-search-row="${escapeHtml(name.toLowerCase())}">
+                      <div class="setting-label">
+                        <span class="setting-title setting-title--mono">${escapeHtml(name)}</span>
                       </div>
-                      <div class="flex items-center gap-4">
+                      <div class="setting-control">
                         ${advancedInputHtml(key, name, value)}
                         ${compared !== undefined ? compareBadgeHtml(String(compared), different, `data-copy-key="${escapeHtml(key)}"`) : ''}
                       </div>
@@ -441,23 +445,21 @@ export function createGameSettingsView(config) {
                 })
                 .join('');
               return `
-                <div class="card mb-4" data-search-section="${escapeHtml(section.toLowerCase())}" style="margin-bottom: 16px;">
-                  <div class="card-header py-2" style="border-bottom: 1px solid rgba(255,255,255,0.05); margin-bottom: 12px;">
-                    <h4 class="card-title text-violet" style="font-size: 14px;">${escapeHtml(section)}</h4>
-                  </div>
-                  <div class="card-body" style="padding: 0;">${rows}</div>
+                <div class="card settings-section" data-search-section="${escapeHtml(section.toLowerCase())}">
+                  <h4 class="settings-section__title">${escapeHtml(section)}</h4>
+                  <div class="card-body">${rows}</div>
                 </div>`;
             })
             .join('');
           return `
-            <div data-search-category>
-              <h3 class="section-title text-cyan" style="font-size: 15px; margin-bottom: 12px; margin-top: 8px; border-bottom: 1px solid rgba(0, 212, 255, 0.15); padding-bottom: 6px;">${escapeHtml(category)}</h3>
+            <div class="settings-category" data-search-category>
+              <h3 class="section-title">${escapeHtml(category)}</h3>
               ${cards}
             </div>`;
         })
         .join('');
 
-      advanced.innerHTML = html || '<div class="empty-state"><p>No additional settings found in these files.</p></div>';
+      advanced.innerHTML = html || '<div class="empty-state"><p>Nenhuma configuração adicional encontrada nesses arquivos.</p></div>';
       applySearch();
     }
 
@@ -483,7 +485,7 @@ export function createGameSettingsView(config) {
     function updateSyncButton() {
       const count = differingKeys().length;
       syncButton.style.display = compare && count ? 'inline-flex' : 'none';
-      $('[data-sync-label]').textContent = `Sync All Differences (${count})`;
+      $('[data-sync-label]').textContent = `Copiar diferenças (${count})`;
     }
 
     function renderAll() {
@@ -536,16 +538,16 @@ export function createGameSettingsView(config) {
       const keys = differingKeys();
       if (!keys.length) return;
       const confirmed = await confirmAction({
-        title: 'Sync differences',
-        message: `Copy ${keys.length} value(s) from "${compare.name}" into the settings being edited?\nNothing is written to disk until you save.`,
-        confirmText: 'Sync',
+        title: 'Copiar diferenças',
+        message: `Copiar ${keys.length} valor(es) de "${compare.name}" para as configurações em edição?\nNada é gravado no disco até você salvar.`,
+        confirmText: 'Copiar',
       });
       if (!confirmed) return;
       const other = compareFlat();
       keys.forEach((key) => applyValue(state.ini, state.persisted, key, other[key]));
       markDirty();
       renderAll();
-      toast(`${keys.length} value(s) copied from "${compare.name}"`, 'success');
+      toast(`${keys.length} valor(es) copiados de "${compare.name}"`, 'success');
     });
 
     // ── Keymapper ──
@@ -555,8 +557,8 @@ export function createGameSettingsView(config) {
       if (!info || !selectedKey) return;
       const binding = findBinding(state?.persisted, selectedKey);
       const actionEl = $('[data-keymap-action]');
-      $('[data-keymap-key]').textContent = selectedKey;
-      actionEl.textContent = binding ? actionLabel(binding.name) : 'Nothing (unbound)';
+      $('[data-keymap-key]').textContent = keyLabel(selectedKey);
+      actionEl.textContent = binding ? actionLabel(binding.name) : 'Nenhuma (sem atalho)';
       actionEl.className = `font-semibold ${binding ? 'text-emerald' : 'text-muted'}`;
       if (binding && KEYMAP_ACTIONS.some(([id]) => id === binding.name)) $('[data-keymap-select]').value = binding.name;
       info.style.display = 'flex';
@@ -574,7 +576,7 @@ export function createGameSettingsView(config) {
     $('[data-keymap-rebind]')?.addEventListener('click', () => {
       if (!selectedKey || !state) return;
       if (!state.persisted?.files) {
-        toast('PersistedSettings.json could not be loaded, so keybindings cannot be changed.', 'error');
+        toast('Não foi possível carregar o PersistedSettings.json, então os atalhos não podem ser alterados.', 'error');
         return;
       }
       const action = $('[data-keymap-select]').value;
@@ -582,14 +584,14 @@ export function createGameSettingsView(config) {
       markDirty();
       renderAll();
       showBinding();
-      toast(`"${selectedKey}" now triggers ${actionLabel(action)}. Save to apply.`, 'success');
+      toast(`"${keyLabel(selectedKey)}" agora aciona ${actionLabel(action)}. Salve para aplicar.`, 'success');
     });
 
     // ── Loading ──
 
     async function loadProfileOptions() {
       const profiles = await api.profiles.list().catch((err) => {
-        toast(`Could not list profiles: ${errorMessage(err)}`, 'error');
+        toast(`Não foi possível listar os perfis: ${errorMessage(err)}`, 'error');
         return [];
       });
       const options = profiles.map((p) => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`).join('');
@@ -599,8 +601,8 @@ export function createGameSettingsView(config) {
         select.innerHTML = `<option value="">${emptyLabel}</option>${options}`;
         select.value = profiles.some((p) => p.name === previous) ? previous : '';
       };
-      fill(targetSelect, 'Current game files');
-      fill(compareSelect, 'None');
+      fill(targetSelect, 'Arquivos atuais do jogo');
+      fill(compareSelect, 'Nenhum');
     }
 
     async function loadTarget() {
@@ -620,7 +622,7 @@ export function createGameSettingsView(config) {
           try {
             persisted = (await api.lol.readKeybindings()).data;
           } catch (err) {
-            toast(`PersistedSettings.json could not be read: ${errorMessage(err)}`, 'error');
+            toast(`Não foi possível ler o PersistedSettings.json: ${errorMessage(err)}`, 'error');
           }
           state = { targetName: '', ini, persisted };
         }
@@ -632,7 +634,7 @@ export function createGameSettingsView(config) {
       } catch (err) {
         state = null;
         updateSaveLabels();
-        advanced.innerHTML = `<div class="empty-state"><h3>Could not load settings</h3><p>${escapeHtml(errorMessage(err))}</p></div>`;
+        advanced.innerHTML = `<div class="empty-state"><h3>Não foi possível carregar as configurações</h3><p>${escapeHtml(errorMessage(err))}</p></div>`;
       }
     }
 
@@ -640,9 +642,9 @@ export function createGameSettingsView(config) {
       const previous = state?.targetName ?? '';
       if (dirty) {
         const discard = await confirmAction({
-          title: 'Discard changes?',
-          message: 'You have unsaved changes. Switching will discard them.',
-          confirmText: 'Discard',
+          title: 'Descartar alterações?',
+          message: 'Há alterações não salvas. Trocar agora vai descartá-las.',
+          confirmText: 'Descartar',
           danger: true,
         });
         if (!discard) {
@@ -665,7 +667,7 @@ export function createGameSettingsView(config) {
           const profile = await api.profiles.load(name);
           compare = { name, ini: profile.targets?.gameCfg ?? {}, persisted: profile.targets?.persistedSettings ?? {} };
         } catch (err) {
-          toast(`Could not load profile: ${errorMessage(err)}`, 'error');
+          toast(`Não foi possível carregar o perfil: ${errorMessage(err)}`, 'error');
           compareSelect.value = '';
         }
       }
@@ -674,7 +676,7 @@ export function createGameSettingsView(config) {
 
     async function save() {
       if (!state) return;
-      const busyLabel = state.targetName ? 'Saving profile…' : 'Saving…';
+      const busyLabel = state.targetName ? 'Salvando perfil…' : 'Salvando…';
       await withBusyButtons(saveButtons, busyLabel, async () => {
         try {
           if (state.targetName) {
@@ -683,17 +685,17 @@ export function createGameSettingsView(config) {
               ...profile,
               targets: { ...profile.targets, gameCfg: state.ini, persistedSettings: state.persisted },
             });
-            toast(`Profile "${state.targetName}" saved`, 'success');
+            toast(`Perfil "${state.targetName}" salvo`, 'success');
           } else {
             await api.status.assertGameClosed();
-            await api.history.saveSnapshot(`Before saving ${config.gameName} settings`);
+            await api.history.saveSnapshot(`Antes de salvar as configurações do ${config.gameName}`);
             await api.lol.updateSettings(state.ini);
             if (state.persisted?.files) await api.lol.updateKeybindings(state.persisted);
-            toast(`${config.gameName} settings saved`, 'success');
+            toast(`Configurações do ${config.gameName} salvas`, 'success');
           }
           dirty = false;
         } catch (err) {
-          toast(`Could not save: ${errorMessage(err)}`, 'error');
+          toast(`Não foi possível salvar: ${errorMessage(err)}`, 'error');
         }
       });
       if (!dirty) await loadTarget();

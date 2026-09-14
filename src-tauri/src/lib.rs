@@ -11,6 +11,7 @@ mod files;
 mod hotkeys;
 mod lcu;
 mod summoner;
+mod tray;
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -36,7 +37,7 @@ fn home_dir() -> Result<PathBuf, String> {
   std::env::var_os("USERPROFILE")
     .or_else(|| std::env::var_os("HOME"))
     .map(PathBuf::from)
-    .ok_or_else(|| "Could not determine the user folder".to_string())
+    .ok_or_else(|| "Não foi possível encontrar a pasta do usuário".to_string())
 }
 
 fn profiles_dir() -> Result<PathBuf, String> {
@@ -145,7 +146,7 @@ async fn get_summoner_profile(install_root: String) -> Result<Option<summoner::S
 #[tauri::command]
 async fn read_client_route(install_root: String, route: String) -> Result<serde_json::Value, String> {
   if !CLIENT_READ_ROUTES.contains(&route.as_str()) {
-    return Err(format!("Client route not allowed: {route}"));
+    return Err(format!("Rota do client não permitida: {route}"));
   }
   lcu::get_json(Path::new(&install_root), &route).await
 }
@@ -157,7 +158,7 @@ fn set_autostart(enabled: bool) -> Result<(), String> {
   #[cfg(not(windows))]
   {
     let _ = enabled;
-    Err("Launch on startup is only supported on Windows".to_string())
+    Err("Iniciar com o sistema só funciona no Windows".to_string())
   }
 }
 
@@ -175,6 +176,16 @@ fn set_global_hotkeys(enabled: bool) {
   hotkeys::set_enabled(enabled);
   #[cfg(not(windows))]
   let _ = enabled;
+}
+
+#[tauri::command]
+fn set_close_to_tray(enabled: bool) {
+  tray::set_close_to_tray(enabled);
+}
+
+#[tauri::command]
+fn quit_app(app: tauri::AppHandle) {
+  app.exit(0);
 }
 
 #[tauri::command]
@@ -203,6 +214,10 @@ fn close_window(window: tauri::Window) {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    // Must be registered first: a second launch just brings this window back.
+    .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+      tray::show_main_window(app);
+    }))
     .invoke_handler(tauri::generate_handler![
       get_home_dir,
       path_exists,
@@ -219,10 +234,13 @@ pub fn run() {
       set_autostart,
       is_autostart_enabled,
       set_global_hotkeys,
+      set_close_to_tray,
+      quit_app,
       minimize_window,
       toggle_maximize_window,
       close_window,
     ])
+    .on_window_event(tray::handle_window_event)
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -231,8 +249,15 @@ pub fn run() {
             .build(),
         )?;
       }
+      tray::create(app.handle())?;
       #[cfg(windows)]
       hotkeys::spawn(app.handle().clone());
+
+      // The window starts hidden (tauri.conf.json) so a launch at Windows
+      // startup stays in the tray instead of flashing on screen.
+      if !std::env::args().any(|arg| arg == tray::MINIMIZED_ARG) {
+        tray::show_main_window(app.handle());
+      }
       Ok(())
     })
     .run(tauri::generate_context!())

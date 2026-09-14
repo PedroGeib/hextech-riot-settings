@@ -40,7 +40,7 @@ pub async fn get_json(install_root: &Path, route: &str) -> Result<serde_json::Va
   let credentials = read_shared(&install_root.join("lockfile"))
     .ok()
     .and_then(|content| parse_lockfile(&content))
-    .ok_or_else(|| "League client is not running".to_string())?;
+    .ok_or_else(|| "O client do League não está aberto".to_string())?;
 
   let response = http_client()?
     .get(format!("https://127.0.0.1:{}{route}", credentials.port))
@@ -48,10 +48,10 @@ pub async fn get_json(install_root: &Path, route: &str) -> Result<serde_json::Va
     .header(reqwest::header::ACCEPT, "application/json")
     .send()
     .await
-    .map_err(|e| format!("Could not reach the League client: {e}"))?;
+    .map_err(|e| format!("Não foi possível falar com o client do League: {e}"))?;
 
   if !response.status().is_success() {
-    return Err(format!("League client answered {} for {route}", response.status()));
+    return Err(format!("O client do League respondeu {} para {route}", response.status()));
   }
   response.json().await.map_err(|e| e.to_string())
 }

@@ -5,21 +5,21 @@ import { errorMessage, toast, withBusyButtons } from '../lib/ui.js';
 
 const REGIONS = [
   ['BR', 'Brasil (BR)'],
-  ['NA', 'North America (NA)'],
-  ['EUW', 'Europe West (EUW)'],
-  ['EUNE', 'Europe Nordic & East (EUNE)'],
-  ['LAN', 'Latin America North (LAN)'],
-  ['LAS', 'Latin America South (LAS)'],
+  ['NA', 'América do Norte (NA)'],
+  ['EUW', 'Europa Ocidental (EUW)'],
+  ['EUNE', 'Europa Nórdica e Leste (EUNE)'],
+  ['LAN', 'América Latina Norte (LAN)'],
+  ['LAS', 'América Latina Sul (LAS)'],
   ['OCE', 'Oceania (OCE)'],
-  ['JP', 'Japan (JP)'],
-  ['KR', 'Korea (KR)'],
-  ['TR', 'Turkey (TR)'],
-  ['RU', 'Russia (RU)'],
-  ['PH', 'Philippines (PH)'],
-  ['SG', 'Singapore (SG)'],
-  ['TH', 'Thailand (TH)'],
+  ['JP', 'Japão (JP)'],
+  ['KR', 'Coreia (KR)'],
+  ['TR', 'Turquia (TR)'],
+  ['RU', 'Rússia (RU)'],
+  ['PH', 'Filipinas (PH)'],
+  ['SG', 'Singapura (SG)'],
+  ['TH', 'Tailândia (TH)'],
   ['TW', 'Taiwan (TW)'],
-  ['VN', 'Vietnam (VN)'],
+  ['VN', 'Vietnã (VN)'],
 ];
 
 const LOCALES = [
@@ -48,45 +48,55 @@ const LOCALES = [
 const SAVE_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>`;
 
 const options = (list) =>
-  list.map(([value, label]) => `<option value="${value}">${escapeHtml(label)} (${value})</option>`).join('');
+  list
+    .map(([value, label]) => {
+      const text = label.includes(`(${value})`) ? label : `${label} (${value})`;
+      return `<option value="${value}">${escapeHtml(text)}</option>`;
+    })
+    .join('');
 
 export function render() {
   return `
     <div id="client-settings-view" class="page-container animate-fade-in">
       <div class="page-header mb-6">
-        <h1 class="page-title text-cyan">Client Settings</h1>
-        <p class="page-subtitle">Region and display language of the Riot Client</p>
+        <h1 class="page-title text-cyan">Client</h1>
+        <p class="page-subtitle">Região e idioma do Riot Client</p>
       </div>
 
-      <div class="card mb-6">
-        <div class="card-body" style="padding: 24px;">
-          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 16px;">
-            <div class="flex flex-col">
-              <label for="client-region" class="text-xs text-muted mb-2 uppercase font-semibold tracking-wider">Server / Region</label>
-              <select id="client-region" class="select-control" style="height: 42px; border-radius: var(--radius-md);">${options(REGIONS)}</select>
-            </div>
-            <div class="flex flex-col">
-              <label for="client-locale" class="text-xs text-muted mb-2 uppercase font-semibold tracking-wider">Language</label>
-              <select id="client-locale" class="select-control" style="height: 42px; border-radius: var(--radius-md);">${options(LOCALES)}</select>
-            </div>
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <h3 class="card-title">Região e idioma</h3>
+            <p class="card-subtitle">Aplique com o Riot Client fechado: ele pode reescrever este arquivo ao abrir ou atualizar.</p>
           </div>
-          <p class="text-xs text-muted" style="margin: 0 0 16px;">Apply while the Riot Client is closed: it can rewrite this file when it starts or updates.</p>
-          <div class="flex justify-end">
-            <button id="client-btn-apply" class="btn btn--primary flex items-center" style="padding: 10px 24px; font-weight: 600;" disabled>${SAVE_ICON}Apply Client Changes</button>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 18px;">
+          <div class="form-group" style="margin: 0;">
+            <label for="client-region">Servidor / região</label>
+            <select id="client-region" class="select-control" style="width: 100%;">${options(REGIONS)}</select>
           </div>
+          <div class="form-group" style="margin: 0;">
+            <label for="client-locale">Idioma</label>
+            <select id="client-locale" class="select-control" style="width: 100%;">${options(LOCALES)}</select>
+          </div>
+        </div>
+        <div class="flex justify-end">
+          <button id="client-btn-apply" class="btn btn--primary" disabled>${SAVE_ICON}Aplicar no client</button>
         </div>
       </div>
 
-      <div class="card" style="border: 1px solid rgba(255, 255, 255, 0.05); background: rgba(0,0,0,0.15);">
-        <div class="card-header flex justify-between items-center py-3">
-          <h3 class="card-title text-muted" style="font-size: 13px; font-weight: 500;">Config File Inspector</h3>
-          <button id="btn-toggle-raw" class="btn btn--secondary btn--sm" aria-expanded="false" aria-controls="client-raw-container" style="padding: 4px 12px; font-size: 11px; height: 28px;">View File</button>
+      <div class="card">
+        <div class="card-header" style="margin-bottom: 0;">
+          <div>
+            <h3 class="card-title">Arquivo de configuração</h3>
+            <p class="card-subtitle">LeagueClientSettings.yaml como está no seu PC.</p>
+          </div>
+          <button id="btn-toggle-raw" class="btn btn--secondary btn--sm" aria-expanded="false" aria-controls="client-raw-container">Ver arquivo</button>
         </div>
-        <div class="card-body" id="client-raw-container" hidden style="padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.05);">
-          <p class="text-xs text-muted mb-3" style="font-size: 11px;">LeagueClientSettings.yaml as stored on your PC.</p>
-          <div style="position: relative;">
-            <button id="btn-copy-raw" class="btn btn--secondary btn--sm" style="position: absolute; right: 12px; top: 12px; font-size: 11px; z-index: 10; height: 28px;">Copy</button>
-            <pre id="client-raw-preview" class="scrollbar-custom" style="background: rgba(5,7,12,0.6); border: 1px solid var(--glass-border); color: var(--text-secondary); padding: 16px; border-radius: var(--radius-md); overflow: auto; max-height: 300px; font-family: Consolas, 'Courier New', monospace; font-size: 11px; line-height: 1.5; white-space: pre; margin: 0;">Loading…</pre>
+        <div class="card-body" id="client-raw-container" hidden style="margin-top: 16px;">
+          <div class="code-block-wrapper">
+            <button id="btn-copy-raw" class="btn btn--secondary btn--sm code-block__copy">Copiar</button>
+            <pre id="client-raw-preview" class="code-block">Carregando…</pre>
           </div>
         </div>
       </div>
@@ -97,7 +107,7 @@ export function render() {
 function selectValue(select, value) {
   if (!value) return;
   if (![...select.options].some((o) => o.value === value)) {
-    select.insertAdjacentHTML('afterbegin', `<option value="${escapeHtml(value)}">${escapeHtml(value)} (current)</option>`);
+    select.insertAdjacentHTML('afterbegin', `<option value="${escapeHtml(value)}">${escapeHtml(value)} (atual)</option>`);
   }
   select.value = value;
 }
@@ -124,37 +134,37 @@ export function mount() {
       preview.textContent = raw;
       applyButton.disabled = false;
     } catch (err) {
-      preview.textContent = `Could not read the file: ${errorMessage(err)}`;
+      preview.textContent = `Não foi possível ler o arquivo: ${errorMessage(err)}`;
       applyButton.disabled = true;
-      toast(`Could not read client settings: ${errorMessage(err)}`, 'error');
+      toast(`Não foi possível ler as configurações do client: ${errorMessage(err)}`, 'error');
     }
   }
 
   toggleRaw.addEventListener('click', () => {
     rawContainer.hidden = !rawContainer.hidden;
-    toggleRaw.textContent = rawContainer.hidden ? 'View File' : 'Hide File';
+    toggleRaw.textContent = rawContainer.hidden ? 'Ver arquivo' : 'Ocultar arquivo';
     toggleRaw.setAttribute('aria-expanded', String(!rawContainer.hidden));
   });
 
   copyButton.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(raw);
-      copyButton.textContent = 'Copied!';
-      setTimeout(() => { copyButton.textContent = 'Copy'; }, 2000);
+      copyButton.textContent = 'Copiado!';
+      setTimeout(() => { copyButton.textContent = 'Copiar'; }, 2000);
     } catch {
-      toast('Could not copy to the clipboard', 'error');
+      toast('Não foi possível copiar para a área de transferência', 'error');
     }
   });
 
   applyButton.addEventListener('click', () =>
-    withBusyButtons([applyButton], 'Applying…', async () => {
+    withBusyButtons([applyButton], 'Aplicando…', async () => {
       try {
-        await api.history.saveSnapshot('Before changing client region/language');
+        await api.history.saveSnapshot('Antes de mudar região/idioma do client');
         await api.client.setLocaleAndRegion({ region: regionSelect.value, locale: localeSelect.value });
-        toast('Client settings applied', 'success');
+        toast('Configurações do client aplicadas', 'success');
         await load();
       } catch (err) {
-        toast(`Could not apply: ${errorMessage(err)}`, 'error');
+        toast(`Não foi possível aplicar: ${errorMessage(err)}`, 'error');
       }
     }),
   );

@@ -12,7 +12,7 @@ export function errorMessage(err) {
 }
 
 /** Resolves true when confirmed. `message` is plain text. */
-export function confirmAction({ title = 'Confirm', message, confirmText = 'Confirm', danger = false }) {
+export function confirmAction({ title = 'Confirmar', message, confirmText = 'Confirmar', danger = false }) {
   return window.showModal({
     title,
     body: `<p style="margin: 0; white-space: pre-line;">${escapeHtml(message)}</p>`,

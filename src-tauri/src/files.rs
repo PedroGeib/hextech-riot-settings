@@ -21,7 +21,7 @@ pub fn config_file(path: &str) -> Result<PathBuf, String> {
   if allowed {
     Ok(path)
   } else {
-    Err(format!("Access to \"{}\" is not allowed", path.display()))
+    Err(format!("Acesso a \"{}\" não permitido", path.display()))
   }
 }
 
@@ -37,7 +37,7 @@ pub fn profile_file(dir: &Path, file_name: &str) -> Result<PathBuf, String> {
   if allowed {
     Ok(dir.join(file_name))
   } else {
-    Err(format!("Invalid profile file name \"{file_name}\""))
+    Err(format!("Nome de arquivo de perfil inválido: \"{file_name}\""))
   }
 }
 
@@ -56,7 +56,7 @@ pub fn read_shared(path: &Path) -> Result<String, String> {
   options
     .open(path)
     .and_then(|mut file| file.read_to_end(&mut bytes))
-    .map_err(|e| format!("Could not read \"{}\": {e}", path.display()))?;
+    .map_err(|e| format!("Não foi possível ler \"{}\": {e}", path.display()))?;
 
   let text = String::from_utf8_lossy(&bytes);
   Ok(text.strip_prefix('\u{feff}').unwrap_or(&text).to_string())
@@ -64,7 +64,7 @@ pub fn read_shared(path: &Path) -> Result<String, String> {
 
 /// Writes through a temporary file so a crash never leaves a half-written config.
 pub fn write_atomic(path: &Path, content: &str) -> Result<(), String> {
-  let fail = |e: std::io::Error| format!("Could not write \"{}\": {e}", path.display());
+  let fail = |e: std::io::Error| format!("Não foi possível gravar \"{}\": {e}", path.display());
 
   if let Some(parent) = path.parent() {
     fs::create_dir_all(parent).map_err(fail)?;
@@ -98,7 +98,7 @@ pub fn is_read_only(path: &Path) -> Result<bool, String> {
 #[allow(clippy::permissions_set_readonly_false)]
 pub fn set_read_only(path: &Path, read_only: bool) -> Result<(), String> {
   let mut permissions = fs::metadata(path)
-    .map_err(|e| format!("Could not access \"{}\": {e}", path.display()))?
+    .map_err(|e| format!("Não foi possível acessar \"{}\": {e}", path.display()))?
     .permissions();
   permissions.set_readonly(read_only);
   fs::set_permissions(path, permissions).map_err(|e| e.to_string())

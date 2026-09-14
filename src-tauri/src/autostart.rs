@@ -15,7 +15,7 @@ pub fn set(enabled: bool) -> Result<(), String> {
 
   if enabled {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    run.set_value(VALUE_NAME, &format!("\"{}\"", exe.display()))
+    run.set_value(VALUE_NAME, &format!("\"{}\" {}", exe.display(), crate::tray::MINIMIZED_ARG))
       .map_err(|e| e.to_string())
   } else {
     match run.delete_value(VALUE_NAME) {
