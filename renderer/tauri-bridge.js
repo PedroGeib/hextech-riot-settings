@@ -1,636 +1,464 @@
 // tauri-bridge.js
-// Maps Electron's window.api to Tauri custom commands and client-side parsers.
+//
+// Defines `window.api`, the only way views touch the system. Parsing, merging
+// and serializing config files happens here with the pure helpers in lib/;
+// the Rust side only does scoped file access, process checks and read-only
+// calls to the League client.
+
+import { detectEol, detectIndent, withEol } from './lib/format.js';
+import { mergeIni, parseIni, stringifyIni } from './lib/ini.js';
+import { deepMerge } from './lib/merge.js';
+import { mergePersisted } from './lib/persisted.js';
+import { profileFileName } from './lib/profile-name.js';
+import { syncPersistedWithIni } from './lib/settings-model.js';
+import { KEYS, readJson, readText, writeJson, writeText } from './lib/storage.js';
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
-const { getCurrentWindow } = window.__TAURI__.window;
 
-const appWindow = getCurrentWindow();
+const GAME_PROCESS = 'League of Legends.exe';
+const CLIENT_PROCESSES = ['RiotClientServices.exe', 'LeagueClient.exe', 'LeagueClientUx.exe'];
+const HISTORY_LIMIT = 5;
+const ACCOUNT_CACHE_MS = 2000;
 
-if (!window.ini) {
-  window.ini = {
-    parse: (str) => {
-      const result = {};
-      let currentSection = 'General';
-      result[currentSection] = {};
-      (str || '').split(/\r?\n/).forEach(line => {
-        const trimmed = line.trim();
-        if (!trimmed || trimmed.startsWith(';') || trimmed.startsWith('#')) return;
-        if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
-          currentSection = trimmed.slice(1, -1);
-          result[currentSection] = result[currentSection] || {};
-        } else {
-          const eq = trimmed.indexOf('=');
-          if (eq > 0) {
-            const k = trimmed.slice(0, eq).trim();
-            const v = trimmed.slice(eq + 1).trim();
-            result[currentSection][k] = v;
-          }
-        }
-      });
-      return result;
-    },
-    stringify: (obj) => {
-      let out = '';
-      for (const [sec, vals] of Object.entries(obj || {})) {
-        out += `[${sec}]\n`;
-        for (const [k, v] of Object.entries(vals || {})) {
-          out += `${k}=${v}\n`;
-        }
-        out += '\n';
-      }
-      return out;
-    }
+const DEFAULT_INSTALL_ROOTS = [
+  'C:\\Riot Games\\League of Legends',
+  'D:\\Riot Games\\League of Legends',
+  'E:\\Riot Games\\League of Legends',
+  'C:\\Program Files\\Riot Games\\League of Legends',
+  'C:\\Program Files (x86)\\Riot Games\\League of Legends',
+];
+
+const joinPath = (...parts) =>
+  parts
+    .map((part, i) => (i === 0 ? String(part).replace(/[\\/]+$/, '') : String(part).replace(/^[\\/]+|[\\/]+$/g, '')))
+    .join('\\');
+
+// ─── Installation paths ─────────────────────────────────────────────────────
+
+async function looksLikeInstall(root) {
+  return (
+    (await invoke('path_exists', { path: joinPath(root, 'Config') })) ||
+    (await invoke('path_exists', { path: joinPath(root, 'LeagueClient.exe') }))
+  );
+}
+
+/** Accepts the League folder itself or its parent (e.g. "C:\Riot Games"). */
+async function findInstallIn(folder) {
+  for (const candidate of [folder, joinPath(folder, 'League of Legends')]) {
+    if (await looksLikeInstall(candidate)) return candidate;
+  }
+  return null;
+}
+
+async function findInstallRoot() {
+  const custom = readText(KEYS.installPath)?.trim();
+  if (custom) {
+    const found = await findInstallIn(custom);
+    if (found) return found;
+    throw new Error(`"${custom}" is not a League of Legends installation. Fix the path in App Settings.`);
+  }
+
+  const home = await invoke('get_home_dir');
+  for (const root of [...DEFAULT_INSTALL_ROOTS, joinPath(home, 'Riot Games', 'League of Legends')]) {
+    if (await looksLikeInstall(root)) return root;
+  }
+  throw new Error('League of Legends installation not found. Set the path in App Settings.');
+}
+
+let pathsPromise = null;
+
+function resolvePaths() {
+  if (!pathsPromise) {
+    pathsPromise = findInstallRoot().then((installRoot) => {
+      const configDir = joinPath(installRoot, 'Config');
+      return {
+        installRoot,
+        configDir,
+        gameCfg: joinPath(configDir, 'game.cfg'),
+        persistedSettings: joinPath(configDir, 'PersistedSettings.json'),
+        clientSettings: joinPath(configDir, 'LeagueClientSettings.yaml'),
+      };
+    });
+    // A failed lookup is retried on the next call instead of being cached.
+    pathsPromise.catch(() => {
+      pathsPromise = null;
+    });
+  }
+  return pathsPromise;
+}
+
+// ─── Processes ──────────────────────────────────────────────────────────────
+
+async function processSnapshot() {
+  const processes = await invoke('get_riot_processes');
+  return {
+    processes,
+    clientRunning: processes.some((p) => CLIENT_PROCESSES.includes(p)),
+    gameRunning: processes.includes(GAME_PROCESS),
   };
 }
 
-// Helper: path combiner for Windows/OS
-const pathJoin = (...parts) => {
-  return parts.map(p => p.trim().replace(/[\/\\]+$/, '')).join('\\');
+async function assertGameClosed() {
+  if ((await processSnapshot()).gameRunning) {
+    throw new Error('A League of Legends match is running. Close the game first, or it will overwrite your settings when it exits.');
+  }
+}
+
+// ─── Raw config file access ─────────────────────────────────────────────────
+
+const lock = {
+  isReadOnly: (path) => invoke('is_config_read_only', { path }),
+  setReadOnly: (path) => invoke('set_config_read_only', { path, readOnly: true }),
+  removeReadOnly: (path) => invoke('set_config_read_only', { path, readOnly: false }),
 };
 
-const pathResolve = (pathStr) => {
-  return pathStr; // Simple pass-through for client-side
+/** Writes a config file, keeping its read-only (cloud sync lock) state. */
+async function writeConfigFile(path, content) {
+  await assertGameClosed();
+  const locked = await lock.isReadOnly(path);
+  if (locked) await lock.removeReadOnly(path);
+  try {
+    await invoke('write_config_file', { path, content });
+  } finally {
+    if (locked) await lock.setReadOnly(path);
+  }
+}
+
+function parseJson(raw, label) {
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`${label} is not valid JSON: ${err.message}`);
+  }
+}
+
+function yaml() {
+  if (!window.jsyaml) throw new Error('YAML support failed to load (vendor/js-yaml.min.js is missing).');
+  return window.jsyaml;
+}
+
+/** Per-file parse/serialize rules; serialization mimics the original file's formatting. */
+const FORMATS = {
+  gameCfg: {
+    label: 'game.cfg',
+    parse: (raw) => parseIni(raw),
+    serialize: (data, raw) => stringifyIni(data, detectEol(raw)),
+  },
+  persistedSettings: {
+    label: 'PersistedSettings.json',
+    parse: (raw) => parseJson(raw, 'PersistedSettings.json'),
+    serialize: (data, raw) => {
+      const eol = detectEol(raw);
+      const trailing = /\r?\n$/.test(raw) ? eol : '';
+      return withEol(JSON.stringify(data, null, detectIndent(raw, 4)), eol) + trailing;
+    },
+  },
+  clientSettings: {
+    label: 'LeagueClientSettings.yaml',
+    parse: (raw) => yaml().load(raw) ?? {},
+    serialize: (data, raw) => {
+      const indent = detectIndent(raw, 4);
+      const text = yaml().dump(data, {
+        indent: typeof indent === 'number' ? indent : 4,
+        lineWidth: -1,
+        noArrayIndent: true,
+        noRefs: true,
+        quotingType: '"',
+        forceQuotes: true,
+      });
+      return withEol(text, detectEol(raw));
+    },
+  },
 };
 
-// ── Paths ──
-let resolvedPaths = null;
+function formatFor(kind) {
+  const format = FORMATS[kind];
+  if (!format) throw new Error(`Unknown config file "${kind}"`);
+  return format;
+}
 
-const resolveInstallPath = async (options = {}) => {
-  if (options && options.installPath) {
-    const custom = options.installPath;
-    const exists = await invoke('file_exists', { path: pathJoin(custom, 'Config') });
-    if (exists) return custom;
+async function readConfig(kind) {
+  const format = formatFor(kind);
+  const path = (await resolvePaths())[kind];
+  const raw = await invoke('read_config_file', { path });
+  return { path, raw, data: format.parse(raw) };
+}
+
+async function replaceConfig(kind, data) {
+  const { path, raw } = await readConfig(kind);
+  await writeConfigFile(path, formatFor(kind).serialize(data, raw));
+}
+
+async function patchConfig(kind, merge, patch) {
+  const { path, raw, data } = await readConfig(kind);
+  const merged = merge(data, patch);
+  await writeConfigFile(path, formatFor(kind).serialize(merged, raw));
+  return { merged };
+}
+
+const patchGameCfg = (patch) => patchConfig('gameCfg', mergeIni, patch);
+const patchPersisted = (patch) => patchConfig('persistedSettings', mergePersisted, patch);
+const patchClient = (patch) => patchConfig('clientSettings', deepMerge, patch);
+
+async function captureTargets() {
+  const dataOrNull = (kind) => readConfig(kind).then((r) => r.data, () => null);
+  const [gameCfg, persistedSettings, clientSettings] = await Promise.all([
+    dataOrNull('gameCfg'),
+    dataOrNull('persistedSettings'),
+    dataOrNull('clientSettings'),
+  ]);
+  return { gameCfg, persistedSettings, clientSettings };
+}
+
+// ─── Account ────────────────────────────────────────────────────────────────
+
+let accountCache = { at: 0, promise: null };
+
+function getCurrentAccount() {
+  if (accountCache.promise && Date.now() - accountCache.at < ACCOUNT_CACHE_MS) return accountCache.promise;
+  const promise = resolvePaths()
+    .then(({ installRoot }) => invoke('get_summoner_profile', { installRoot }))
+    .catch((err) => {
+      console.warn('Could not detect the active account:', err);
+      return null;
+    });
+  accountCache = { at: Date.now(), promise };
+  return promise;
+}
+
+async function readRegalia() {
+  try {
+    const { installRoot } = await resolvePaths();
+    return await invoke('read_client_route', { installRoot, route: '/lol-regalia/v2/current-summoner/regalia' });
+  } catch {
+    return null;
+  }
+}
+
+// ─── History ────────────────────────────────────────────────────────────────
+
+async function saveSnapshot(description) {
+  const snapshot = { timestamp: new Date().toISOString(), description, targets: await captureTargets() };
+  const history = [snapshot, ...readJson(KEYS.history, [])].slice(0, HISTORY_LIMIT);
+  // Drop the oldest entries if localStorage runs out of space.
+  while (history.length && !writeJson(KEYS.history, history)) history.pop();
+  return snapshot;
+}
+
+// ─── Profiles ───────────────────────────────────────────────────────────────
+
+const reportedBrokenProfiles = new Set();
+
+async function readProfiles() {
+  const files = await invoke('list_profiles');
+  return files.flatMap(({ fileName, content }) => {
+    try {
+      const profile = JSON.parse(content);
+      if (profile && typeof profile === 'object') {
+        return [{ ...profile, name: String(profile.name || fileName.replace(/\.json$/i, '')), fileName }];
+      }
+    } catch {
+      // Reported below.
+    }
+    if (!reportedBrokenProfiles.has(fileName)) {
+      reportedBrokenProfiles.add(fileName);
+      console.warn(`Skipping unreadable profile file "${fileName}"`);
+    }
+    return [];
+  });
+}
+
+function findProfile(profiles, name) {
+  const lower = String(name).toLowerCase();
+  return profiles.find((p) => p.name === name) ?? profiles.find((p) => p.name.toLowerCase() === lower) ?? null;
+}
+
+async function loadProfile(name) {
+  const profile = findProfile(await readProfiles(), name);
+  if (!profile) throw new Error(`Profile "${name}" was not found`);
+  return profile;
+}
+
+async function saveProfile(profile) {
+  const name = String(profile?.name ?? '').trim();
+  if (!name) throw new Error('Profile name cannot be empty');
+
+  const profiles = await readProfiles();
+  let fileName = profile.fileName ?? findProfile(profiles, name)?.fileName;
+  if (!fileName) {
+    const taken = new Set(profiles.map((p) => p.fileName.toLowerCase()));
+    const base = profileFileName(name).replace(/\.json$/, '');
+    fileName = `${base}.json`;
+    for (let i = 2; taken.has(fileName.toLowerCase()); i++) fileName = `${base} (${i}).json`;
   }
 
-  const saved = localStorage.getItem('lol-install-path');
-  if (saved) {
-    const exists = await invoke('file_exists', { path: pathJoin(saved, 'Config') });
-    if (exists) return saved;
+  const { fileName: _fileName, ...data } = { ...profile, name };
+  await invoke('write_profile', { fileName, content: JSON.stringify(data, null, 2) });
+  return { ...data, fileName };
+}
+
+async function quickSaveProfile(name) {
+  const trimmed = String(name ?? '').trim();
+  if (!trimmed) throw new Error('Profile name cannot be empty');
+
+  const targets = await captureTargets();
+  if (!targets.gameCfg && !targets.persistedSettings && !targets.clientSettings) {
+    throw new Error('None of the config files could be read, so nothing was saved.');
   }
 
-  const homedir = await invoke('get_home_dir');
-  const defaults = [
-    'C:\\Riot Games\\League of Legends',
-    'D:\\Riot Games\\League of Legends',
-    'E:\\Riot Games\\League of Legends',
-    pathJoin(homedir, 'Riot Games', 'League of Legends'),
-    'C:\\Program Files\\Riot Games\\League of Legends',
-    'C:\\Program Files (x86)\\Riot Games\\League of Legends'
-  ];
+  const [account, existing] = await Promise.all([getCurrentAccount(), readProfiles().then((p) => findProfile(p, trimmed))]);
+  return saveProfile({
+    name: trimmed,
+    version: 2,
+    createdAt: new Date().toISOString(),
+    meta: {
+      summonerName: account?.name ?? null,
+      profileIconId: account?.profileIconId ?? null,
+      summonerLevel: account?.summonerLevel ?? null,
+      regalia: account?.live ? await readRegalia() : null,
+    },
+    targets,
+    originalTargets: structuredClone(targets),
+    fileName: existing?.fileName,
+  });
+}
 
-  for (const root of defaults) {
-    const exists = (await invoke('file_exists', { path: pathJoin(root, 'Config') })) ||
-                   (await invoke('file_exists', { path: pathJoin(root, 'LeagueClient.exe') }));
-    if (exists) return root;
+async function applyProfile(profile, { skipSnapshot = false } = {}) {
+  await assertGameClosed();
+  const targets = profile?.targets ?? {};
+  if (!skipSnapshot) await saveSnapshot(`Before applying "${profile?.name ?? 'profile'}"`);
+
+  const applied = [];
+  if (targets.gameCfg) {
+    await patchGameCfg(targets.gameCfg);
+    applied.push('game.cfg');
   }
+  // PersistedSettings also stores many game.cfg values and Riot restores it
+  // from its servers on login, so the profile's game.cfg values go there too.
+  const { persistedSettings: persistedPath } = await resolvePaths();
+  if (targets.persistedSettings || (targets.gameCfg && (await invoke('path_exists', { path: persistedPath })))) {
+    await patchConfig(
+      'persistedSettings',
+      (current, { persisted, ini }) => {
+        const merged = mergePersisted(current, persisted);
+        syncPersistedWithIni(merged, ini);
+        return merged;
+      },
+      { persisted: targets.persistedSettings ?? {}, ini: targets.gameCfg ?? {} },
+    );
+    applied.push('PersistedSettings.json');
+  }
+  // Only language and region are restored: the rest of this file is patcher
+  // and session state that belongs to the Riot Client.
+  const globals = targets.clientSettings?.install?.globals ?? {};
+  const clientPatch = Object.fromEntries(['locale', 'region'].filter((k) => globals[k]).map((k) => [k, globals[k]]));
+  if (Object.keys(clientPatch).length) {
+    await patchClient({ install: { globals: clientPatch } });
+    applied.push('LeagueClientSettings.yaml');
+  }
+  return { applied };
+}
 
-  return 'C:\\Riot Games\\League of Legends';
-};
+// ─── window.api ─────────────────────────────────────────────────────────────
 
-const resolveConfigPaths = async (options = {}) => {
-  const installRoot = await resolveInstallPath(options);
-  const configDir = pathJoin(installRoot, 'Config');
-  return {
-    configDir,
-    gameCfg: pathJoin(configDir, 'game.cfg'),
-    persistedSettings: pathJoin(configDir, 'PersistedSettings.json'),
-    clientSettings: pathJoin(configDir, 'LeagueClientSettings.yaml')
-  };
-};
-
-// Expose window.api
 window.api = {
   paths: {
-    resolve: async (options) => {
-      if (!resolvedPaths) {
-        resolvedPaths = await resolveConfigPaths(options);
+    resolve: resolvePaths,
+    /** Validates and stores a custom install folder; an empty value restores auto-detection. */
+    setInstallPath: async (folder) => {
+      const trimmed = String(folder ?? '').trim();
+      if (trimmed && !(await findInstallIn(trimmed))) {
+        throw new Error(`"${trimmed}" does not contain a League of Legends installation`);
       }
-      return resolvedPaths;
+      writeText(KEYS.installPath, trimmed || null);
+      pathsPromise = null;
+      accountCache = { at: 0, promise: null };
+      return resolvePaths();
     },
-    resolveInstall: resolveInstallPath,
-    readRaw: async (filePath) => {
-      return await invoke('read_file', { path: filePath });
+    fileStatus: async () => {
+      const paths = await resolvePaths();
+      const kinds = ['gameCfg', 'persistedSettings', 'clientSettings'];
+      const exists = await Promise.all(kinds.map((k) => invoke('path_exists', { path: paths[k] })));
+      return Object.fromEntries(kinds.map((k, i) => [k, exists[i]]));
     },
-    writeRaw: async (filePath, content) => {
-      await invoke('write_file', { path: filePath, content });
-    }
+  },
+
+  configs: {
+    read: readConfig,
+    replace: replaceConfig,
+    parse: (kind, text) => formatFor(kind).parse(text),
+    serialize: (kind, data, originalRaw = '') => formatFor(kind).serialize(data, originalRaw),
+    captureAll: captureTargets,
   },
 
   lol: {
-    readGameCfg: async (options) => {
-      const paths = await window.api.paths.resolve(options);
-      const raw = await window.api.paths.readRaw(paths.gameCfg);
-      const data = window.ini.parse(raw);
-      return { raw, data };
-    },
-    updateSettings: async (params, options) => {
-      const paths = await window.api.paths.resolve(options);
-      const { data } = await window.api.lol.readGameCfg(options);
-      
-      // Merge patch
-      for (const [section, values] of Object.entries(params)) {
-        if (!data[section]) data[section] = {};
-        for (const [k, v] of Object.entries(values)) {
-          data[section][k] = String(v);
-        }
-      }
-
-      const output = window.ini.stringify(data, { whitespace: false });
-      
-      const isLocked = await window.api.lock.isReadOnly(paths.gameCfg);
-      if (isLocked) await window.api.lock.removeReadOnly(paths.gameCfg);
-      
-      await window.api.paths.writeRaw(paths.gameCfg, output);
-      
-      if (isLocked) await window.api.lock.setReadOnly(paths.gameCfg);
-      
-      return { merged: data };
-    },
-    readKeybindings: async (options) => {
-      const paths = await window.api.paths.resolve(options);
-      const raw = await window.api.paths.readRaw(paths.persistedSettings);
-      const data = JSON.parse(raw);
-      return { raw, data };
-    },
-    updateKeybindings: async (params, options) => {
-      const paths = await window.api.paths.resolve(options);
-      const output = JSON.stringify(params, null, 2);
-      
-      const isLocked = await window.api.lock.isReadOnly(paths.persistedSettings);
-      if (isLocked) await window.api.lock.removeReadOnly(paths.persistedSettings);
-      
-      await window.api.paths.writeRaw(paths.persistedSettings, output);
-      
-      if (isLocked) await window.api.lock.setReadOnly(paths.persistedSettings);
-      
-      return { merged: params };
-    }
+    readGameCfg: () => readConfig('gameCfg'),
+    updateSettings: patchGameCfg,
+    readKeybindings: () => readConfig('persistedSettings'),
+    updateKeybindings: patchPersisted,
   },
 
   tft: {
-    readGameCfg: async (options) => {
-      const paths = await window.api.paths.resolve(options);
-      const raw = await window.api.paths.readRaw(paths.gameCfg);
-      const data = window.ini.parse(raw);
-      return { raw, data };
-    },
-    updateSettings: async (params, options) => {
-      const paths = await window.api.paths.resolve(options);
-      const { data } = await window.api.tft.readGameCfg(options);
- 
-      for (const [section, values] of Object.entries(params)) {
-        if (!data[section]) data[section] = {};
-        for (const [k, v] of Object.entries(values)) {
-          data[section][k] = String(v);
-        }
-      }
- 
-      const output = window.ini.stringify(data, { whitespace: false });
-      
-      const isLocked = await window.api.lock.isReadOnly(paths.gameCfg);
-      if (isLocked) await window.api.lock.removeReadOnly(paths.gameCfg);
-      
-      await window.api.paths.writeRaw(paths.gameCfg, output);
-      
-      if (isLocked) await window.api.lock.setReadOnly(paths.gameCfg);
-      
-      return { merged: data };
-    }
+    readGameCfg: () => readConfig('gameCfg'),
+    updateSettings: patchGameCfg,
   },
- 
+
   client: {
-    read: async (options) => {
-      const paths = await window.api.paths.resolve(options);
-      const raw = await window.api.paths.readRaw(paths.clientSettings);
-      const data = (window.jsyaml && typeof window.jsyaml.load === 'function') ? window.jsyaml.load(raw) : {};
-      return { raw, data };
-    },
-    update: async (params, options) => {
-      const paths = await window.api.paths.resolve(options);
-      const { data } = await window.api.client.read(options);
-      
-      const deepMerge = (target, source) => {
-        for (const key of Object.keys(source)) {
-          if (source[key] instanceof Object && target[key]) {
-            deepMerge(target[key], source[key]);
-          } else {
-            target[key] = source[key];
-          }
-        }
-        return target;
-      };
- 
-      const merged = deepMerge(data || {}, params);
-      const output = window.jsyaml.dump(merged);
-      
-      const isLocked = await window.api.lock.isReadOnly(paths.clientSettings);
-      if (isLocked) await window.api.lock.removeReadOnly(paths.clientSettings);
-      
-      await window.api.paths.writeRaw(paths.clientSettings, output);
-      
-      if (isLocked) await window.api.lock.setReadOnly(paths.clientSettings);
-      
-      return { merged };
-    },
-    setLocale: async (locale, options) => {
-      return await window.api.client.update({ install: { globals: { locale } } }, options);
-    },
-    setRegion: async (region, options) => {
-      return await window.api.client.update({ install: { globals: { region } } }, options);
-    },
-    getCurrentSummonerProfile: async (options = {}) => {
-      try {
-        const installRoot = await resolveInstallPath(options);
-        return await invoke('get_summoner_profile', { installRoot });
-      } catch (err) {
-        console.warn('getCurrentSummonerProfile failed:', err);
-        return null;
-      }
-    },
-    getCurrentSummonerName: async (options = {}) => {
-      try {
-        const profile = await window.api.client.getCurrentSummonerProfile(options);
-        return profile ? profile.name : null;
-      } catch (err) {
-        console.warn('getCurrentSummonerName failed:', err);
-        return null;
-      }
-    }
+    read: () => readConfig('clientSettings'),
+    update: patchClient,
+    setLocaleAndRegion: ({ locale, region }) => patchClient({ install: { globals: { locale, region } } }),
+    getCurrentSummonerProfile: getCurrentAccount,
+    getCurrentSummonerName: async () => (await getCurrentAccount())?.name ?? null,
   },
 
   profiles: {
-    list: async () => {
-      const homedir = await invoke('get_home_dir');
-      const profilesDir = pathJoin(homedir, '.riot-orchestrator', 'profiles');
-      const list = await invoke('list_profiles', { profilesDir });
-      
-      const profiles = [];
-      for (const name of list) {
-        try {
-          const profilePath = pathJoin(profilesDir, `${name}.json`);
-          const raw = await invoke('read_file', { path: profilePath });
-          const parsed = JSON.parse(raw);
-          profiles.push({
-            name: parsed.name || name,
-            filePath: profilePath,
-            createdAt: parsed.createdAt || new Date().toISOString(),
-            meta: parsed.meta || null
-          });
-        } catch {}
-      }
-      return profiles;
-    },
-    load: async (nameOrPath) => {
-      let filePath = nameOrPath;
-      if (!nameOrPath.includes('\\') && !nameOrPath.includes('/')) {
-        const homedir = await invoke('get_home_dir');
-        filePath = pathJoin(homedir, '.riot-orchestrator', 'profiles', `${nameOrPath}.json`);
-      }
-      const raw = await invoke('read_file', { path: filePath });
-      return JSON.parse(raw);
-    },
-    save: async (profile) => {
-      const homedir = await invoke('get_home_dir');
-      const profilesDir = pathJoin(homedir, '.riot-orchestrator', 'profiles');
-      const filePath = pathJoin(profilesDir, `${profile.name}.json`);
-      await invoke('write_file', { path: filePath, content: JSON.stringify(profile, null, 2) });
-      return filePath;
-    },
-    quickSave: async (name, options) => {
-      const paths = await window.api.paths.resolve(options);
-      
-      let gameCfg = null;
-      let persistedSettings = null;
-      let clientSettings = null;
-
-      try {
-        const { data } = await window.api.lol.readGameCfg(options);
-        gameCfg = data;
-      } catch {}
-      try {
-        const { data } = await window.api.lol.readKeybindings(options);
-        persistedSettings = data;
-      } catch {}
-      try {
-        const { data } = await window.api.client.read(options);
-        clientSettings = data;
-      } catch {}
-
-      // Get metadata (active player real profile) including regalia (moldura/capa/emblema).
-      // LoL does not store these as files on disk — they're cosmetic unlocks served by Riot's
-      // CDN, so we snapshot them by reading the LCU endpoints at the moment of save.
-      let summonerName = "Unknown";
-      let profileIconId = 29;
-      let summonerLevel = 1;
-      let regalia = null;  // { bannerId, crestType, bannerUrl, crestUrl }
-
-      try {
-        const lockFilePath = pathJoin(paths.configDir, '..', 'lockfile');
-        const lockContent = await invoke('read_file', { path: lockFilePath });
-        const parts = lockContent.split(':');
-        const port = parts[2];
-        const token = btoa('riot:' + parts[3]);
-        const auth = `Basic ${token}`;
-        const base = `https://127.0.0.1:${port}`;
-        const headers = { Authorization: auth };
-
-        // /lol-summoner/v1/current-summoner — name, icon, level, regalia (banner + crest)
-        const sRes = await fetch(`${base}/lol-summoner/v1/current-summoner`, { headers });
-        if (sRes.ok) {
-          const summoner = await sRes.json();
-          summonerName = summoner.displayName || summoner.internalName || summonerName;
-          profileIconId = summoner.profileIconId || profileIconId;
-          summonerLevel = summoner.summonerLevel || summonerLevel;
-
-          // regalia is a Riot-internal object with the player's equipped banner and crest.
-          // We persist the IDs and URLs so the card renders correctly when the player isn't
-          // logged in anymore (e.g. showing a snapshot of "what they had equipped then").
-          const r = summoner.regalia || {};
-          const bannerId = r.bannerId || null;
-          const crestType = r.crestType || null;
-          const bannerUrl = r.bannerImage || r.banner || null;
-          const crestUrl = r.crestImage || r.crest || null;
-          if (bannerId || crestType || bannerUrl || crestUrl) {
-            regalia = { bannerId, crestType, bannerUrl, crestUrl };
-          }
-        }
-      } catch {}
-
-      const profile = {
-        name,
-        version: 1,
-        createdAt: new Date().toISOString(),
-        meta: {
-          summonerName,
-          profileIconId,
-          summonerLevel,
-          regalia
-        },
-        targets: {
-          gameCfg,
-          persistedSettings,
-          clientSettings
-        },
-        originalTargets: {
-          gameCfg: gameCfg ? JSON.parse(JSON.stringify(gameCfg)) : null,
-          persistedSettings: persistedSettings ? JSON.parse(JSON.stringify(persistedSettings)) : null,
-          clientSettings: clientSettings ? JSON.parse(JSON.stringify(clientSettings)) : null
-        }
-      };
-
-      const path = await window.api.profiles.save(profile);
-      return { profile, filePath: path };
-    },
+    list: async () =>
+      (await readProfiles()).map(({ name, fileName, createdAt, meta }) => ({ name, fileName, createdAt, meta: meta ?? null })),
+    load: loadProfile,
+    save: saveProfile,
+    quickSave: quickSaveProfile,
+    applyAll: applyProfile,
     restoreOriginal: async (name) => {
-      const profile = await window.api.profiles.load(name);
-      if (profile.originalTargets) {
-        profile.targets = JSON.parse(JSON.stringify(profile.originalTargets));
-        await window.api.profiles.save(profile);
-        return profile;
-      } else {
-        throw new Error("This profile does not have an original backup snapshot.");
-      }
-    },
-    applyAll: async (profileObj, options) => {
-      try {
-        const name = profileObj.name || 'Custom Profile';
-        // Avoid recursive snapshot saving if this is a rollback operation
-        if (!options || !options.skipSnapshot) {
-          await window.api.history.saveSnapshot(`Before applying profile: ${name}`);
-        }
-      } catch {}
-      const paths = await window.api.paths.resolve(options);
-      const applied = [];
-
-      if (profileObj.targets.gameCfg) {
-        await window.api.lol.updateSettings(profileObj.targets.gameCfg, options);
-        applied.push('gameCfg');
-      }
-      if (profileObj.targets.persistedSettings) {
-        await window.api.lol.updateKeybindings(profileObj.targets.persistedSettings, options);
-        applied.push('persistedSettings');
-      }
-      if (profileObj.targets.clientSettings) {
-        await window.api.client.update(profileObj.targets.clientSettings, options);
-        applied.push('clientSettings');
-      }
-
-      return { applied };
+      const profile = await loadProfile(name);
+      if (!profile.originalTargets) throw new Error('This profile has no original snapshot to restore.');
+      return saveProfile({ ...profile, targets: structuredClone(profile.originalTargets) });
     },
     delete: async (name) => {
-      const homedir = await invoke('get_home_dir');
-      const profilePath = pathJoin(homedir, '.riot-orchestrator', 'profiles', `${name}.json`);
-      await invoke('delete_file', { path: profilePath });
+      const profile = await loadProfile(name);
+      await invoke('delete_profile', { fileName: profile.fileName });
     },
-    onAutoSave: (callback) => {
-      listen('profile:auto-saved', (event) => callback(null, event.payload));
-    },
-    onGlobalHotkey: (callback) => {
-      listen('global-hotkey-triggered', (event) => callback(event.payload));
-    }
+    onGlobalHotkey: (callback) => listen('global-hotkey-triggered', (event) => callback(event.payload)),
   },
 
   status: {
-    isClientRunning: async () => {
-      return await invoke('is_process_running', { name: 'RiotClientServices.exe' });
-    },
-    isGameRunning: async () => {
-      return await invoke('is_process_running', { name: 'League of Legends.exe' });
-    },
-    getRunningProcesses: async () => {
-      const targets = ['RiotClientServices.exe', 'League of Legends.exe', 'LeagueClient.exe'];
-      return await invoke('get_running_processes', { targetNames: targets });
-    },
-    assertClosed: async (options = {}) => {
-      const running = await window.api.status.getRunningProcesses();
-      if (running.length > 0) {
-        throw new Error(`The following Riot processes are running: ${running.join(', ')}. Please close them first.`);
-      }
-    }
+    snapshot: processSnapshot,
+    assertGameClosed,
   },
 
-  lock: {
-    isReadOnly: async (filePath) => {
-      return await invoke('is_read_only', { path: filePath });
-    },
-    setReadOnly: async (filePath) => {
-      await invoke('set_read_only', { path: filePath, readOnly: true });
-    },
-    removeReadOnly: async (filePath) => {
-      await invoke('set_read_only', { path: filePath, readOnly: false });
-    }
-  },
+  lock,
 
   history: {
-    saveSnapshot: async (description) => {
-      try {
-        let gameCfg = null;
-        let persistedSettings = null;
-        let clientSettings = null;
-        try {
-          const res = await window.api.lol.readGameCfg();
-          gameCfg = res?.data || null;
-        } catch {}
-        try {
-          const res = await window.api.lol.readKeybindings();
-          persistedSettings = res?.data || null;
-        } catch {}
-        try {
-          const res = await window.api.client.read();
-          clientSettings = res?.data || null;
-        } catch {}
-
-        const snapshot = {
-          timestamp: new Date().toISOString(),
-          description,
-          targets: { gameCfg, persistedSettings, clientSettings }
-        };
-
-        const historyRaw = localStorage.getItem('config-history') || '[]';
-        const history = JSON.parse(historyRaw);
-        history.unshift(snapshot);
-        if (history.length > 5) {
-          history.pop();
-        }
-        localStorage.setItem('config-history', JSON.stringify(history));
-      } catch (err) {
-        console.warn('Failed to save history snapshot:', err);
-      }
-    },
-    list: () => {
-      try {
-        const historyRaw = localStorage.getItem('config-history') || '[]';
-        return JSON.parse(historyRaw);
-      } catch {
-        return [];
-      }
-    },
+    saveSnapshot,
+    list: () => readJson(KEYS.history, []),
     rollback: async (timestamp) => {
-      const historyRaw = localStorage.getItem('config-history') || '[]';
-      const history = JSON.parse(historyRaw);
-      const snapshot = history.find(h => h.timestamp === timestamp);
-      if (!snapshot) throw new Error('Snapshot not found');
-
-      // Save a rollback snapshot of current settings before overwriting
-      await window.api.history.saveSnapshot(`Before Rollback to ${new Date(timestamp).toLocaleTimeString()}`);
-      await window.api.profiles.applyAll(snapshot, { skipSnapshot: true });
-    }
+      const snapshot = readJson(KEYS.history, []).find((h) => h.timestamp === timestamp);
+      if (!snapshot) throw new Error('That backup no longer exists.');
+      await assertGameClosed();
+      await saveSnapshot(`Before rollback to ${new Date(timestamp).toLocaleString()}`);
+      return applyProfile({ name: snapshot.description, targets: snapshot.targets }, { skipSnapshot: true });
+    },
   },
 
   window: {
     minimize: () => invoke('minimize_window'),
     maximize: () => invoke('toggle_maximize_window'),
-    close: () => invoke('close_window')
+    close: () => invoke('close_window'),
   },
 
   system: {
     setAutostart: (enabled) => invoke('set_autostart', { enabled }),
-    isAutostartEnabled: () => invoke('is_autostart_enabled')
+    isAutostartEnabled: () => invoke('is_autostart_enabled'),
+    setGlobalHotkeys: (enabled) => invoke('set_global_hotkeys', { enabled }),
   },
-
-  // ── Identity (Bandeiras / Molduras) ─────────────────────────────────
-  // Lê o inventário do próprio client do LoL via LCU API. Nada é baixado
-  // ou hardcoded por nós — os itens e URLs vêm do client do usuário.
-  identity: {
-    /**
-     * Lê o lockfile do client e devolve { port, token, baseUrl, auth }.
-     * Lança erro se o client não estiver aberto.
-     */
-    readLcuConnection: async () => {
-      const paths = await window.api.paths.resolve();
-      const lockFilePath = pathJoin(paths.configDir, '..', 'lockfile');
-      const lockContent = await invoke('read_file', { path: lockFilePath });
-      const parts = lockContent.split(':');
-      if (parts.length < 4) throw new Error('lockfile inválido');
-      const port = parts[2];
-      const token = parts[3];
-      const auth = 'Basic ' + btoa('riot:' + token);
-      return { port, token, auth, baseUrl: `https://127.0.0.1:${port}` };
-    },
-
-    /**
-     * Busca o inventário de bandeiras e molduras do player no client.
-     * Retorna { bandeiras: [...], molduras: [...] } no formato pronto
-     * pra popular o manifest.
-     */
-    fetchFromClient: async () => {
-      const conn = await window.api.identity.readLcuConnection();
-      const headers = { Authorization: conn.auth, Accept: 'application/json' };
-
-      // Player-loot é o endpoint oficial com URLs que o próprio client usa
-      const res = await fetch(conn.baseUrl + '/lol-loot/v2/player-loot', { headers });
-      if (!res.ok) {
-        throw new Error(`LCU respondeu ${res.status} em /lol-loot/v2/player-loot`);
-      }
-      const data = await res.json();
-
-      const bandeiras = [];
-      const molduras = [];
-      const seen = new Set();
-
-      for (const item of (data || [])) {
-        // LCU retorna lootName ("BANNER_X", "BORDER_X") e itemDesc
-        const lootName = String(item.lootName || item.lootId || '').toUpperCase();
-        const display = String(item.displayCategories || '').toUpperCase();
-        const type = String(item.type || '').toUpperCase();
-
-        const isBanner = lootName.includes('BANNER') || display.includes('BANNER') || type === 'BANNER';
-        const isBorder = lootName.includes('BORDER') || display.includes('BORDER') || type === 'BORDER'
-                       || lootName.includes('FRAME')  || display.includes('FRAME');
-
-        if (!isBanner && !isBorder) continue;
-        if (seen.has(item.lootId)) continue;
-        seen.add(item.lootId);
-
-        // Pega a melhor URL disponível — a LCU retorna várias, priorizamos a "tile"
-        const url = item.tileIcon || item.icon || item.tileLargeImage || '';
-        const fullUrl = url && url.startsWith('http')
-          ? url
-          : (url ? conn.baseUrl + url : '');
-
-        const entry = {
-          id: String(item.lootId || lootName),
-          name: String(item.itemDesc || item.localizedName || lootName),
-          subtitle: [item.rarity, item.localizedSubtitle].filter(Boolean).join(' · '),
-          url: fullUrl,
-          unlocked: (item.count || 0) > 0
-        };
-
-        if (isBanner) bandeiras.push(entry);
-        else molduras.push(entry);
-      }
-
-      return { bandeiras, molduras };
-    }
-  }
 };
-
-// Bind frameless titlebar controls
-document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('btn-minimize')?.addEventListener('click', () => window.api.window.minimize());
-  document.getElementById('btn-maximize')?.addEventListener('click', () => window.api.window.maximize());
-  document.getElementById('btn-close')?.addEventListener('click', () => window.api.window.close());
-
-  // Bind titlebar lock toggle click handler
-  document.getElementById('titlebar-lock-badge')?.addEventListener('click', async () => {
-    try {
-      const paths = await window.api.paths.resolve();
-      if (!paths || !paths.persistedSettings) return;
-      const isLocked = await window.api.lock.isReadOnly(paths.persistedSettings);
-      if (isLocked) {
-        await window.api.lock.removeReadOnly(paths.persistedSettings);
-        if (window.showToast) window.showToast('PersistedSettings desbloqueado (Cloud Sync ativo)', 'success');
-      } else {
-        await window.api.lock.setReadOnly(paths.persistedSettings);
-        if (window.showToast) window.showToast('PersistedSettings bloqueado (Cloud Sync pausado)', 'success');
-      }
-      // Trigger status update if dashboard or main lifecycle has updateTitlebarAndSidebarStatus
-      if (window.updateTitlebarAndSidebarStatus) {
-        window.updateTitlebarAndSidebarStatus();
-      }
-    } catch (err) {
-      if (window.showToast) window.showToast('Erro ao alternar trava: ' + (err.message || err), 'error');
-    }
-  });
-});

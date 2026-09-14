@@ -1,230 +1,168 @@
+// App preferences: theme, automation, startup and the League install path.
+
+import { escapeHtml } from '../lib/html.js';
+import { KEYS, readFlag, readText, writeFlag, writeText } from '../lib/storage.js';
+import { errorMessage, toast, withBusyButtons } from '../lib/ui.js';
+
+const THEMES = [
+  ['default', 'Void Blue (Default)'],
+  ['hextech', 'Hextech (Piltover)'],
+  ['chemtech', 'Chemtech (Zaun)'],
+  ['void', 'Void Purple'],
+  ['shadowisles', 'Shadow Isles'],
+  ['noxus', 'Noxus Crimson'],
+  ['demacia', 'Demacia Gold'],
+  ['shurima', 'Shurima Desert'],
+  ['ionia', 'Ionia Spirit'],
+  ['freljord', 'Freljord Ice'],
+  ['bilgewater', 'Bilgewater Serpent'],
+];
+
+function toggleRow(id, title, description) {
+  return `
+    <div class="setting-row">
+      <div class="setting-label">
+        <label class="setting-title" for="${id}">${title}</label>
+        <p class="setting-desc">${description}</p>
+      </div>
+      <input type="checkbox" id="${id}" class="toggle-switch" />
+    </div>`;
+}
+
 export function render() {
   return `
     <div class="page-container animate-fade-in">
-      <div class="page-header flex justify-between items-center mb-6">
-        <div>
-          <h1 class="page-title text-cyan">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;">
-              <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
-            </svg>
-            App Settings
-          </h1>
-          <p class="page-subtitle">Configure application themes, path overrides, and automation features</p>
-        </div>
+      <div class="page-header mb-6">
+        <h1 class="page-title text-cyan">App Settings</h1>
+        <p class="page-subtitle">Themes, automation and the League of Legends install location</p>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <!-- Theme Selector Card -->
         <section class="card">
-          <div class="card-header">
-            <h3 class="card-title text-violet">LoL Regions / Themes</h3>
-          </div>
+          <div class="card-header"><h3 class="card-title text-violet">Theme</h3></div>
           <div class="card-body">
-            <p class="text-sm text-muted mb-4">Select a regional theme inspired by the League of Legends universe.</p>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
-              <button class="btn btn--secondary btn--sm theme-btn" data-theme="default" style="padding: 8px; font-size: 11px;">
-                Void Blue (Default)
-              </button>
-              <button class="btn btn--secondary btn--sm theme-btn" data-theme="hextech" style="padding: 8px; font-size: 11px;">
-                Hextech (Piltover)
-              </button>
-              <button class="btn btn--secondary btn--sm theme-btn" data-theme="chemtech" style="padding: 8px; font-size: 11px;">
-                Chemtech (Zaun)
-              </button>
-              <button class="btn btn--secondary btn--sm theme-btn" data-theme="void" style="padding: 8px; font-size: 11px;">
-                Void Purple
-              </button>
-              <button class="btn btn--secondary btn--sm theme-btn" data-theme="shadowisles" style="padding: 8px; font-size: 11px;">
-                Shadow Isles
-              </button>
-              <button class="btn btn--secondary btn--sm theme-btn" data-theme="noxus" style="padding: 8px; font-size: 11px;">
-                Noxus Crimson
-              </button>
-              <button class="btn btn--secondary btn--sm theme-btn" data-theme="demacia" style="padding: 8px; font-size: 11px;">
-                Demacia Gold
-              </button>
-              <button class="btn btn--secondary btn--sm theme-btn" data-theme="shurima" style="padding: 8px; font-size: 11px;">
-                Shurima Desert
-              </button>
-              <button class="btn btn--secondary btn--sm theme-btn" data-theme="ionia" style="padding: 8px; font-size: 11px;">
-                Ionia Spirit
-              </button>
-              <button class="btn btn--secondary btn--sm theme-btn" data-theme="freljord" style="padding: 8px; font-size: 11px;">
-                Freljord Ice
-              </button>
-              <button class="btn btn--secondary btn--sm theme-btn" data-theme="bilgewater" style="padding: 8px; font-size: 11px; grid-column: span 2;">
-                Bilgewater Serpent
-              </button>
+            <p class="text-sm text-muted mb-4">Color themes inspired by the regions of Runeterra.</p>
+            <div id="theme-buttons" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              ${THEMES.map(([id, label], i) => `
+                <button class="btn btn--secondary btn--sm theme-btn" data-theme="${id}" aria-pressed="false" style="padding: 8px; font-size: 11px;${i === THEMES.length - 1 ? ' grid-column: span 2;' : ''}">${escapeHtml(label)}</button>`).join('')}
             </div>
           </div>
         </section>
 
-        <!-- Automation & Hotkeys Card -->
         <section class="card">
-          <div class="card-header">
-            <h3 class="card-title text-violet">Automation & Controls</h3>
-          </div>
+          <div class="card-header"><h3 class="card-title text-violet">Automation & Controls</h3></div>
           <div class="card-body" style="padding: 0;">
-            <!-- Auto-Switcher Toggle -->
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="setting-title">Auto-Profile Switcher</span>
-                <p class="setting-desc">Auto-apply profiles when matching accounts log in.</p>
-              </div>
-              <input type="checkbox" id="cfg-auto-switcher" class="toggle-switch" />
-            </div>
-
-            <!-- Global Hotkeys Toggle -->
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="setting-title">Global Hotkeys (Ctrl+Alt+1/2)</span>
-                <p class="setting-desc">Apply Slot 1 or 2 instant configurations globally.</p>
-              </div>
-              <input type="checkbox" id="cfg-global-hotkeys" class="toggle-switch" />
-            </div>
-
-            <!-- Start with Windows -->
-            <div class="setting-row">
-              <div class="setting-label">
-                <span class="setting-title">Launch on Startup</span>
-                <p class="setting-desc">Run Hextech Riot Settings when Windows boots up.</p>
-              </div>
-              <input type="checkbox" id="cfg-run-startup" class="toggle-switch" />
-            </div>
+            ${toggleRow('cfg-auto-switcher', 'Auto Profile Switcher', 'Apply the linked profile when an account logs into the client.')}
+            ${toggleRow('cfg-global-hotkeys', 'Global Hotkeys (Ctrl+Alt+1 / 2)', 'Apply Quick Slot 1 or 2 from anywhere in Windows.')}
+            ${toggleRow('cfg-run-startup', 'Launch on Startup', 'Start Hextech Riot Settings when you sign in to Windows.')}
           </div>
         </section>
       </div>
 
-      <!-- Path Settings Card -->
-      <div class="card mt-6" style="margin-top: 24px;">
-        <div class="card-header">
-          <h3 class="card-title text-cyan">Riot Games Installation Path</h3>
-        </div>
+      <div class="card" style="margin-top: 24px;">
+        <div class="card-header"><h3 class="card-title text-cyan">League of Legends Installation</h3></div>
         <div class="card-body">
-          <p class="text-sm text-muted mb-4">
-            By default, RSO auto-detects your Riot Client directory. If your game is installed in a custom location, specify it below.
-          </p>
-          <div class="flex gap-4 items-center">
-            <input type="text" id="cfg-install-path" class="input-control flex-1" placeholder="e.g. C:\\Riot Games" />
-            <button id="btn-save-path" class="btn btn--primary">Save Path</button>
-          </div>
+          <p class="text-sm text-muted mb-4">Detected automatically in the usual folders. If the game is installed elsewhere, enter its folder (or the "Riot Games" folder that contains it).</p>
+          <form id="install-path-form" class="flex gap-4 items-center" style="flex-wrap: wrap;">
+            <input type="text" id="cfg-install-path" class="input-control flex-1" aria-label="Installation folder" placeholder="C:\\Riot Games\\League of Legends" style="min-width: 260px;" />
+            <button type="submit" class="btn btn--primary">Save Path</button>
+            <button type="button" id="btn-reset-path" class="btn btn--secondary">Use Auto-Detect</button>
+          </form>
+          <p class="text-xs text-muted" id="detected-path" style="margin: 12px 0 0; font-family: monospace;"></p>
         </div>
       </div>
-    </div>
-  `;
+    </div>`;
 }
 
 export function mount() {
-  // Theme management
-  const applyTheme = (themeName) => {
-    // Correctly strip all theme- classes
-    document.body.classList.forEach(cls => {
-      if (cls.startsWith('theme-')) {
-        document.body.classList.remove(cls);
-      }
-    });
+  const api = window.api;
 
-    if (themeName !== 'default' && themeName) {
-      document.body.classList.add(`theme-` + themeName);
-    }
-    localStorage.setItem('app-theme', themeName);
-
-    // Update active visual outline on buttons
-    document.querySelectorAll('.theme-btn').forEach(btn => {
-      const btnTheme = btn.getAttribute('data-theme');
-      if (btnTheme === themeName) {
-        btn.style.borderColor = 'var(--accent-cyan)';
-        btn.style.background = 'rgba(0, 212, 255, 0.08)';
-      } else {
-        btn.style.borderColor = 'var(--glass-border)';
-        btn.style.background = '';
-      }
+  // Theme
+  const applyTheme = (theme) => {
+    [...document.body.classList].filter((c) => c.startsWith('theme-')).forEach((c) => document.body.classList.remove(c));
+    if (theme !== 'default') document.body.classList.add(`theme-${theme}`);
+    writeText(KEYS.theme, theme);
+    document.querySelectorAll('.theme-btn').forEach((button) => {
+      const active = button.dataset.theme === theme;
+      button.classList.toggle('theme-btn--active', active);
+      button.setAttribute('aria-pressed', String(active));
     });
   };
-
-  const savedTheme = localStorage.getItem('app-theme') || 'default';
-  applyTheme(savedTheme);
-
-  document.querySelectorAll('.theme-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      const theme = e.currentTarget.getAttribute('data-theme');
-      applyTheme(theme);
-      if (window.showToast) window.showToast(`Theme changed to ${theme}!`, 'success');
-    });
+  const savedTheme = readText(KEYS.theme, 'default');
+  applyTheme(THEMES.some(([id]) => id === savedTheme) ? savedTheme : 'default');
+  document.getElementById('theme-buttons').addEventListener('click', (event) => {
+    const button = event.target.closest('.theme-btn');
+    if (button) applyTheme(button.dataset.theme);
   });
 
-  // Toggles
-  const switcherCheckbox = document.getElementById('cfg-auto-switcher');
-  const hotkeysCheckbox = document.getElementById('cfg-global-hotkeys');
-  const startupCheckbox = document.getElementById('cfg-run-startup');
+  // Automation toggles
+  const autoSwitcher = document.getElementById('cfg-auto-switcher');
+  autoSwitcher.checked = readFlag(KEYS.autoSwitcher, true);
+  autoSwitcher.addEventListener('change', () => {
+    writeFlag(KEYS.autoSwitcher, autoSwitcher.checked);
+    toast(`Auto Profile Switcher ${autoSwitcher.checked ? 'enabled' : 'disabled'}`, 'success');
+  });
 
-  if (switcherCheckbox) {
-    const active = localStorage.getItem('app-settings-auto-switcher') !== 'false'; // default true
-    switcherCheckbox.checked = active;
-    switcherCheckbox.addEventListener('change', (e) => {
-      localStorage.setItem('app-settings-auto-switcher', e.target.checked ? 'true' : 'false');
-      if (window.showToast) window.showToast('Auto-Switcher setting updated', 'success');
-    });
-  }
-
-  if (hotkeysCheckbox) {
-    const active = localStorage.getItem('app-settings-global-hotkeys') !== 'false'; // default true
-    hotkeysCheckbox.checked = active;
-    hotkeysCheckbox.addEventListener('change', (e) => {
-      localStorage.setItem('app-settings-global-hotkeys', e.target.checked ? 'true' : 'false');
-      if (window.showToast) window.showToast('Global Hotkeys setting updated', 'success');
-    });
-  }
-
-  if (startupCheckbox) {
-    const loadStartupStatus = async () => {
-      try {
-        const isEnabled = await window.api.system.isAutostartEnabled();
-        startupCheckbox.checked = isEnabled;
-        localStorage.setItem('app-settings-startup', isEnabled ? 'true' : 'false');
-      } catch (err) {
-        console.warn('Could not read startup status:', err);
-      }
-    };
-    loadStartupStatus();
-
-    startupCheckbox.addEventListener('change', async (e) => {
-      try {
-        const enabled = e.target.checked;
-        await window.api.system.setAutostart(enabled);
-        localStorage.setItem('app-settings-startup', enabled ? 'true' : 'false');
-        if (window.showToast) {
-          window.showToast(enabled ? 'Inicialização automática ativada!' : 'Inicialização automática desativada!', 'success');
-        }
-      } catch (err) {
-        if (window.showToast) window.showToast(`Erro ao alterar inicialização: ${err.message || err}`, 'error');
-        startupCheckbox.checked = !e.target.checked;
-      }
-    });
-  }
-
-  // Path Override
-  const pathInput = document.getElementById('cfg-install-path');
-  const btnSavePath = document.getElementById('btn-save-path');
-
-  const loadCurrentPath = async () => {
+  const hotkeys = document.getElementById('cfg-global-hotkeys');
+  hotkeys.checked = readFlag(KEYS.globalHotkeys, true);
+  hotkeys.addEventListener('change', async () => {
     try {
-      const resolved = localStorage.getItem('custom-install-path') || '';
-      if (pathInput) pathInput.value = resolved;
-    } catch {}
-  };
-
-  loadCurrentPath();
-
-  btnSavePath?.addEventListener('click', () => {
-    if (!pathInput) return;
-    const customPath = pathInput.value.trim();
-    if (customPath) {
-      localStorage.setItem('custom-install-path', customPath);
-      if (window.showToast) window.showToast('Installation path override saved!', 'success');
-    } else {
-      localStorage.removeItem('custom-install-path');
-      if (window.showToast) window.showToast('Reverted to default auto-detection path', 'info');
+      await api.system.setGlobalHotkeys(hotkeys.checked);
+      writeFlag(KEYS.globalHotkeys, hotkeys.checked);
+      toast(`Global hotkeys ${hotkeys.checked ? 'enabled' : 'disabled'}`, 'success');
+    } catch (err) {
+      hotkeys.checked = !hotkeys.checked;
+      toast(`Could not change hotkeys: ${errorMessage(err)}`, 'error');
     }
   });
+
+  const startup = document.getElementById('cfg-run-startup');
+  startup.disabled = true;
+  api.system
+    .isAutostartEnabled()
+    .then((enabled) => { startup.checked = enabled; })
+    .catch((err) => console.warn('Could not read startup setting:', err))
+    .finally(() => { startup.disabled = false; });
+  startup.addEventListener('change', async () => {
+    try {
+      await api.system.setAutostart(startup.checked);
+      toast(`Launch on startup ${startup.checked ? 'enabled' : 'disabled'}`, 'success');
+    } catch (err) {
+      startup.checked = !startup.checked;
+      toast(`Could not change startup setting: ${errorMessage(err)}`, 'error');
+    }
+  });
+
+  // Install path
+  const pathForm = document.getElementById('install-path-form');
+  const pathInput = document.getElementById('cfg-install-path');
+  const detected = document.getElementById('detected-path');
+  pathInput.value = readText(KEYS.installPath, '');
+
+  const showDetected = () =>
+    api.paths
+      .resolve()
+      .then((paths) => { detected.textContent = `Using: ${paths.installRoot}`; })
+      .catch((err) => { detected.textContent = errorMessage(err); });
+  showDetected();
+
+  const savePath = (value, button) =>
+    withBusyButtons([button], 'Checking…', async () => {
+      try {
+        const paths = await api.paths.setInstallPath(value);
+        pathInput.value = readText(KEYS.installPath, '');
+        detected.textContent = `Using: ${paths.installRoot}`;
+        toast(value ? 'Installation path saved' : 'Using automatic detection', 'success');
+        window.refreshStatus();
+      } catch (err) {
+        toast(errorMessage(err), 'error');
+        showDetected();
+      }
+    });
+
+  pathForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    savePath(pathInput.value.trim(), pathForm.querySelector('button[type="submit"]'));
+  });
+  document.getElementById('btn-reset-path').addEventListener('click', (event) => savePath('', event.currentTarget));
 }

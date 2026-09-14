@@ -89,9 +89,7 @@ if defined FOUND_EXE (
     for %%p in ("!FOUND_EXE!") do explorer /select,"%%~fp"
 ) else (
     echo O build terminou mas nao encontrei o .exe automaticamente.
-    echo Procure manualmente dentro de src-tauri\target\release\
-    echo ou src-tauri\target-codex-build\release\ ^(ou pasta similar,
-    echo dependendo da sua config do Cargo^).
+    echo Procure manualmente dentro de src-tauri\target\release\bundle\
 )
 
 echo.

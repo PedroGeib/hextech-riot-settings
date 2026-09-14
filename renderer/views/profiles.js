@@ -1,302 +1,279 @@
+// Profiles page: save, apply, edit and delete configuration snapshots.
+
+import { FALLBACK_ICON_URL, attachImageFallbacks, latestVersion, profileIconUrl } from '../lib/ddragon.js';
+import { escapeHtml } from '../lib/html.js';
+import { KEYS, readJson, writeJson } from '../lib/storage.js';
+import { confirmAction, errorMessage, toast, withBusyButtons } from '../lib/ui.js';
+
+const TARGET_TABS = [
+  ['gameCfg', 'game.cfg'],
+  ['persistedSettings', 'Keybindings'],
+  ['clientSettings', 'Client Settings'],
+];
+
+function formatDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value ?? '') : date.toLocaleString();
+}
+
 export function render() {
   return `
     <div id="profiles-view" class="view-container">
       <header class="page-header">
         <h1>Profiles</h1>
-        <p class="subtitle">Save, load, and apply configuration snapshots</p>
+        <p class="subtitle">Save, apply and edit configuration snapshots</p>
       </header>
 
       <section class="card mb-4">
         <h3>Save New Profile</h3>
-        <div class="form-group mb-2">
-          <label>Profile Name</label>
-          <input type="text" id="new-profile-name" class="input-control w-full" placeholder="e.g. Optimized FPS Settings" />
-        </div>
-        <div class="form-group mb-4">
-          <label>Targets to Include</label>
-          <div style="display: flex; gap: 1rem; margin-top: 0.5rem;">
-            <label><input type="checkbox" checked disabled /> game.cfg</label>
-            <label><input type="checkbox" checked disabled /> PersistedSettings.json</label>
-            <label><input type="checkbox" checked disabled /> LeagueClientSettings.yaml</label>
-          </div>
-        </div>
-        <button id="btn-save-profile" class="btn btn--primary">Save Profile</button>
+        <p class="text-sm text-muted" style="margin: 4px 0 12px;">Captures game.cfg, PersistedSettings.json and LeagueClientSettings.yaml as they are right now.</p>
+        <form id="save-profile-form" class="flex gap-4 items-center" style="flex-wrap: wrap;">
+          <input type="text" id="new-profile-name" class="input-control" maxlength="100" aria-label="Profile name" placeholder="e.g. Optimized FPS" style="flex: 1; min-width: 220px;" />
+          <button type="submit" class="btn btn--primary">Save Profile</button>
+        </form>
       </section>
 
       <section class="card">
         <h3>Saved Profiles</h3>
-        <div id="profiles-list-container">
-          <div id="profiles-empty-state" class="empty-state" style="display: none;">
-            <p>No profiles saved yet.</p>
-          </div>
-          <div id="profiles-grid" style="display: grid; grid-template-columns: 1fr; gap: 1rem; margin-top: 1rem;">
-            <!-- Profile cards go here -->
-          </div>
+        <div id="profiles-list" style="display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 16px;">
+          <div class="skeleton skeleton--card" style="height: 72px;"></div>
         </div>
       </section>
-    </div>
-  `;
+    </div>`;
+}
+
+function profileRowHtml(profile, version) {
+  const meta = profile.meta ?? {};
+  const name = escapeHtml(profile.name);
+  const details = [
+    `Created ${formatDate(profile.createdAt)}`,
+    meta.summonerLevel ? `LVL ${meta.summonerLevel}` : null,
+    meta.summonerName && meta.summonerName !== profile.name ? `from ${meta.summonerName}` : null,
+  ]
+    .filter(Boolean)
+    .map(escapeHtml)
+    .join(' • ');
+
+  return `
+    <div class="profile-card" style="border: 1px solid var(--glass-border); padding: 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
+      <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
+        <div style="position: relative; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+          <svg style="position: absolute; inset: 0; width: 100%; height: 100%;" viewBox="0 0 100 100" aria-hidden="true">
+            <circle cx="50" cy="50" r="46" fill="none" stroke="#c89b3c" stroke-width="4.5" />
+          </svg>
+          <div style="width: 32px; height: 32px; border-radius: 50%; overflow: hidden; background: #0a1428; border: 1.5px solid #000;">
+            <img src="${escapeHtml(profileIconUrl(version, meta.profileIconId))}" data-fallback="${FALLBACK_ICON_URL}" alt="" style="width: 100%; height: 100%; object-fit: cover;" />
+          </div>
+        </div>
+        <div style="min-width: 0;">
+          <h4 style="margin: 0 0 0.15rem 0; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${name}</h4>
+          <p class="text-sm text-muted" style="margin: 0; font-size: 11px;">${details}</p>
+        </div>
+      </div>
+      <div style="display: flex; gap: 0.5rem; flex-shrink: 0;">
+        <button class="btn btn--secondary btn--sm" data-edit="${name}">Edit</button>
+        <button class="btn btn--secondary btn--sm" data-apply="${name}">Apply</button>
+        <button class="btn btn--danger btn--sm" data-delete="${name}">Delete</button>
+      </div>
+    </div>`;
 }
 
 export function mount() {
-  const loadProfiles = async () => {
+  const root = document.getElementById('profiles-view');
+  if (!root) return;
+  const api = window.api;
+  const list = root.querySelector('#profiles-list');
+  const form = root.querySelector('#save-profile-form');
+  const nameInput = root.querySelector('#new-profile-name');
+
+  nameInput.value = window.appState?.account?.name ?? '';
+
+  async function loadProfiles() {
     try {
-      const profiles = await window.api.profiles.list();
-      const grid = document.getElementById('profiles-grid');
-      const emptyState = document.getElementById('profiles-empty-state');
-      
-      grid.innerHTML = '';
-      
-      if (!profiles || profiles.length === 0) {
-        emptyState.style.display = 'block';
-        return;
-      }
-      
-      emptyState.style.display = 'none';
-
-      let ddragonVersion = '14.10.1';
-      try {
-        const res = await fetch('https://ddragon.leagueoflegends.com/api/versions.json');
-        const versions = await res.json();
-        if (Array.isArray(versions) && versions.length > 0) {
-          ddragonVersion = versions[0];
-        }
-      } catch (e) {
-        console.warn('Failed to fetch latest DDragon version:', e);
-      }
-
-      profiles.forEach(p => {
-        const d = new Date(p.createdAt);
-        const dateStr = !isNaN(d.getTime()) ? d.toLocaleString() : p.createdAt;
-
-        const card = document.createElement('div');
-        card.className = 'profile-card';
-        card.style.border = '1px solid #333';
-        card.style.padding = '1rem';
-        card.style.borderRadius = '8px';
-        card.style.display = 'flex';
-        card.style.justifyContent = 'space-between';
-        card.style.alignItems = 'center';
-
-        const meta = p.meta || {};
-        let iconId = meta.profileIconId || 29;
-        if (!meta.profileIconId && p.name === 'GaloDCalcA80kmph') {
-          iconId = 6923;
-        }
-
-        card.innerHTML = `
-          <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="position: relative; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-              <svg style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;" viewBox="0 0 100 100">
-                <circle cx="50" cy="50" r="46" fill="none" stroke="#c89b3c" stroke-width="4.5" />
-              </svg>
-              <div style="width: 32px; height: 32px; border-radius: 50%; overflow: hidden; background: #0a1428; border: 1.5px solid #000;">
-                <img src="https://ddragon.leagueoflegends.com/cdn/${ddragonVersion}/img/profileicon/${iconId}.png" style="width: 100%; height: 100%; object-fit: cover;" onerror="this.src='https://ddragon.leagueoflegends.com/cdn/14.10.1/img/profileicon/29.png'" />
-              </div>
-            </div>
-            <div>
-              <h4 style="margin: 0 0 0.15rem 0; font-size: 14px; font-weight: 600;">${p.name}</h4>
-              <p class="text-sm text-muted" style="margin: 0; font-size: 11px;">Created: ${dateStr}${meta.summonerLevel ? ` • LVL ${meta.summonerLevel}` : ''}</p>
-            </div>
-          </div>
-          <div style="display: flex; gap: 0.5rem;">
-            <button class="btn btn--secondary btn-edit-profile" data-name="${p.name}">Edit</button>
-            <button class="btn btn--secondary btn-apply-profile" data-name="${p.name}">Apply</button>
-            <button class="btn btn--secondary btn-delete-profile" style="color: #ff4444; border-color: #ff4444;" data-name="${p.name}">Delete</button>
-          </div>
-        `;
-
-        grid.appendChild(card);
-      });
-
-      // Attach event listeners
-      document.querySelectorAll('.btn-apply-profile').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          const name = e.target.getAttribute('data-name');
-          if (confirm(`Are you sure you want to apply the profile "${name}"? This will overwrite your current settings.`)) {
-            try {
-              const profileObj = await window.api.profiles.load(name);
-              await window.api.profiles.applyAll(profileObj, { force: true });
-              if (window.showToast) window.showToast(`Profile "${name}" applied successfully`, 'success');
-            } catch (err) {
-              if (window.showToast) window.showToast(err.message || err, 'error');
-            }
-          }
-        });
-      });
-
-      document.querySelectorAll('.btn-delete-profile').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          const name = e.target.getAttribute('data-name');
-          if (confirm(`Are you sure you want to delete the profile "${name}"?`)) {
-            try {
-              await window.api.profiles.delete(name);
-              if (window.showToast) window.showToast(`Profile "${name}" deleted successfully`, 'success');
-              loadProfiles();
-            } catch (err) {
-              if (window.showToast) window.showToast(err.message || err, 'error');
-            }
-          }
-        });
-      });
-
-      // EDIT PROFILE MODAL
-      document.querySelectorAll('.btn-edit-profile').forEach(btn => {
-        btn.addEventListener('click', async (e) => {
-          const name = e.target.getAttribute('data-name');
-          try {
-            const profile = await window.api.profiles.load(name);
-            openEditModal(profile);
-          } catch (err) {
-            if (window.showToast) window.showToast(`Error loading profile: ${err.message || err}`, 'error');
-          }
-        });
-      });
-
+      const [profiles, version] = await Promise.all([api.profiles.list(), latestVersion()]);
+      if (!root.isConnected) return;
+      list.innerHTML = profiles.length
+        ? profiles.map((profile) => profileRowHtml(profile, version)).join('')
+        : '<div class="empty-state"><p>No profiles saved yet.</p></div>';
+      attachImageFallbacks(list);
     } catch (err) {
-      console.warn('Failed to load profiles:', err);
+      list.innerHTML = `<div class="empty-state"><h3>Could not load profiles</h3><p>${escapeHtml(errorMessage(err))}</p></div>`;
     }
-  };
+  }
 
-  const openEditModal = (profile) => {
-    const overlay = document.getElementById('modal-overlay');
-    const header = document.getElementById('modal-header');
-    const body = document.getElementById('modal-body');
-    const footer = document.getElementById('modal-footer');
-
-    // Make local copy of targets for temporary editing
-    const editedTargets = {
-      gameCfg: profile.targets.gameCfg ? JSON.parse(JSON.stringify(profile.targets.gameCfg)) : {},
-      persistedSettings: profile.targets.persistedSettings ? JSON.parse(JSON.stringify(profile.targets.persistedSettings)) : {},
-      clientSettings: profile.targets.clientSettings ? JSON.parse(JSON.stringify(profile.targets.clientSettings)) : {}
-    };
-
-    let activeTab = 'gameCfg';
-
-    header.innerHTML = `<h3 style="margin:0;">Edit Profile: ${profile.name}</h3>`;
-
-    body.innerHTML = `
-      <div class="profile-edit-tabs" style="display: flex; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid #333; padding-bottom: 8px;">
-        <button class="btn btn--sm tab-btn active" data-tab="gameCfg" style="padding: 4px 12px;">game.cfg</button>
-        <button class="btn btn--sm tab-btn" data-tab="persistedSettings" style="padding: 4px 12px;">Keybindings</button>
-        <button class="btn btn--sm tab-btn" data-tab="clientSettings" style="padding: 4px 12px;">Client Settings</button>
-      </div>
-      <p style="font-size: 11px; margin: 0 0 8px 0; color: var(--text-secondary);">Edit settings as JSON format:</p>
-      <textarea id="profile-edit-textarea" class="input-control w-full" style="height: 280px; font-family: monospace; font-size: 12px; resize: vertical; background: #070a13; color: #00d4ff; border: 1px solid #333; padding: 10px;"></textarea>
-    `;
-
-    footer.innerHTML = `
-      <div style="display: flex; justify-content: space-between; width: 100%;">
-        <button id="btn-restore-original" class="btn btn--secondary" style="color: #f43f5e; border-color: #f43f5e;">Restore Original</button>
-        <div style="display: flex; gap: 0.5rem;">
-          <button id="btn-cancel-edit" class="btn btn--secondary">Cancel</button>
-          <button id="btn-save-edit" class="btn btn--primary">Save Changes</button>
-        </div>
-      </div>
-    `;
-
-    const textarea = document.getElementById('profile-edit-textarea');
-
-    const updateTextarea = () => {
-      textarea.value = JSON.stringify(editedTargets[activeTab], null, 2);
-    };
-
-    updateTextarea();
-
-    // Tab switcher
-    body.querySelectorAll('.tab-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        // Save current textarea edits first
-        try {
-          editedTargets[activeTab] = JSON.parse(textarea.value);
-        } catch (err) {
-          if (window.showToast) window.showToast(`Invalid JSON syntax in active tab. Fix it before switching.`, 'error');
-          return;
-        }
-
-        body.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        e.target.classList.add('active');
-
-        activeTab = e.target.getAttribute('data-tab');
-        updateTextarea();
-      });
-    });
-
-    // Save handler
-    document.getElementById('btn-save-edit').addEventListener('click', async () => {
-      // Save active tab text
-      try {
-        editedTargets[activeTab] = JSON.parse(textarea.value);
-      } catch (err) {
-        if (window.showToast) window.showToast(`Invalid JSON syntax in active tab. Fix it before saving.`, 'error');
-        return;
-      }
-
-      profile.targets = editedTargets;
-
-      try {
-        await window.api.profiles.save(profile);
-        if (window.showToast) window.showToast(`Profile changes saved successfully`, 'success');
-        overlay.style.display = 'none';
-        loadProfiles();
-      } catch (err) {
-        if (window.showToast) window.showToast(`Failed to save edits: ${err.message || err}`, 'error');
-      }
-    });
-
-    // Restore original handler
-    document.getElementById('btn-restore-original').addEventListener('click', async () => {
-      if (confirm(`Are you sure you want to restore this profile to its original configuration (at creation time)?`)) {
-        try {
-          await window.api.profiles.restoreOriginal(profile.name);
-          if (window.showToast) window.showToast(`Profile restored to original state`, 'success');
-          overlay.style.display = 'none';
-          loadProfiles();
-        } catch (err) {
-          if (window.showToast) window.showToast(err.message || err, 'error');
-        }
-      }
-    });
-
-    // Cancel handler
-    document.getElementById('btn-cancel-edit').addEventListener('click', () => {
-      overlay.style.display = 'none';
-    });
-
-    overlay.style.display = 'flex';
-  };
-
-  document.getElementById('btn-save-profile')?.addEventListener('click', async () => {
-    const input = document.getElementById('new-profile-name');
-    const name = input.value.trim();
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const name = nameInput.value.trim();
     if (!name) {
-      if (window.showToast) window.showToast('Please enter a profile name', 'error');
+      toast('Enter a profile name', 'error');
+      nameInput.focus();
       return;
     }
 
-    try {
-      await window.api.profiles.quickSave(name);
-      if (window.showToast) window.showToast('Profile saved successfully', 'success');
-      input.value = '';
-      loadProfiles();
-      prefillSummonerName();
-    } catch (err) {
-      if (window.showToast) window.showToast(err.message || err, 'error');
+    const exists = (await api.profiles.list()).some((p) => p.name.toLowerCase() === name.toLowerCase());
+    if (exists) {
+      const overwrite = await confirmAction({
+        title: 'Overwrite profile?',
+        message: `A profile named "${name}" already exists. Replace it with the current settings?`,
+        confirmText: 'Overwrite',
+        danger: true,
+      });
+      if (!overwrite) return;
+    }
+
+    await withBusyButtons([form.querySelector('button[type="submit"]')], 'Saving…', async () => {
+      try {
+        await api.profiles.quickSave(name);
+        toast(`Profile "${name}" saved`, 'success');
+        await loadProfiles();
+      } catch (err) {
+        toast(errorMessage(err), 'error');
+      }
+    });
+  });
+
+  list.addEventListener('click', async (event) => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    const { edit, apply, delete: remove } = button.dataset;
+
+    if (edit !== undefined) return openEditor(edit);
+
+    if (apply !== undefined) {
+      const confirmed = await confirmAction({
+        title: 'Apply profile',
+        message: `Apply "${apply}"? Your current settings are backed up first and can be restored from the Dashboard.`,
+        confirmText: 'Apply',
+      });
+      if (!confirmed) return;
+      return withBusyButtons([button], 'Applying…', async () => {
+        try {
+          const { applied } = await api.profiles.applyAll(await api.profiles.load(apply));
+          toast(`"${apply}" applied to ${applied.join(', ') || 'no files'}`, 'success');
+        } catch (err) {
+          toast(errorMessage(err), 'error');
+        }
+      });
+    }
+
+    if (remove !== undefined) {
+      const confirmed = await confirmAction({
+        title: 'Delete profile',
+        message: `Delete "${remove}"? This cannot be undone.`,
+        confirmText: 'Delete',
+        danger: true,
+      });
+      if (!confirmed) return;
+      try {
+        await api.profiles.delete(remove);
+        const mappings = Object.fromEntries(Object.entries(readJson(KEYS.accountMappings, {})).filter(([, name]) => name !== remove));
+        writeJson(KEYS.accountMappings, mappings);
+        toast(`Profile "${remove}" deleted`, 'success');
+        await loadProfiles();
+      } catch (err) {
+        toast(errorMessage(err), 'error');
+      }
     }
   });
 
-  const prefillSummonerName = async () => {
+  async function openEditor(name) {
+    let profile;
     try {
-      const name = await window.api.client.getCurrentSummonerName();
-      const input = document.getElementById('new-profile-name');
-      if (name && input) {
-        input.value = name;
-      }
+      profile = await api.profiles.load(name);
     } catch (err) {
-      console.warn('Could not prefill summoner name:', err);
+      toast(errorMessage(err), 'error');
+      return;
     }
-  };
+
+    const drafts = Object.fromEntries(TARGET_TABS.map(([key]) => [key, JSON.stringify(profile.targets?.[key] ?? null, null, 2)]));
+    let active = TARGET_TABS[0][0];
+
+    const modal = window.openModal({
+      title: `Edit profile: ${profile.name}`,
+      wide: true,
+      body: `
+        <div role="tablist" style="display: flex; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid var(--glass-border); padding-bottom: 8px;">
+          ${TARGET_TABS.map(([key, label]) => `<button type="button" role="tab" class="btn btn--sm btn--secondary" data-tab="${key}">${escapeHtml(label)}</button>`).join('')}
+        </div>
+        <p style="font-size: 11px; margin: 0 0 8px 0; color: var(--text-secondary);">Edit the saved values as JSON. Only this profile changes; your game files are untouched until you apply it.</p>
+        <textarea class="input-control w-full" spellcheck="false" aria-label="Profile values as JSON" style="height: 320px; font-family: Consolas, 'Courier New', monospace; font-size: 12px; resize: vertical; background: #070a13; color: #00d4ff; border: 1px solid var(--glass-border); padding: 10px; white-space: pre;"></textarea>`,
+      footer: `
+        <div style="display: flex; justify-content: space-between; width: 100%; gap: 8px;">
+          <button class="btn btn--secondary" data-action="restore" ${profile.originalTargets ? '' : 'disabled title="This profile has no original snapshot"'} style="color: #f43f5e; border-color: #f43f5e;">Restore Original</button>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn--secondary" data-action="cancel">Cancel</button>
+            <button class="btn btn--primary" data-action="save">Save Changes</button>
+          </div>
+        </div>`,
+    });
+
+    const textarea = modal.body.querySelector('textarea');
+
+    const commitDraft = () => {
+      try {
+        JSON.parse(textarea.value);
+        drafts[active] = textarea.value;
+        return true;
+      } catch (err) {
+        const label = TARGET_TABS.find(([key]) => key === active)[1];
+        toast(`Invalid JSON in ${label}: ${err.message}`, 'error');
+        return false;
+      }
+    };
+
+    const showTab = (key) => {
+      active = key;
+      textarea.value = drafts[key];
+      modal.body.querySelectorAll('[data-tab]').forEach((tab) => {
+        const selected = tab.dataset.tab === key;
+        tab.classList.toggle('btn--primary', selected);
+        tab.classList.toggle('btn--secondary', !selected);
+        tab.setAttribute('aria-selected', String(selected));
+      });
+    };
+    showTab(active);
+
+    modal.body.addEventListener('click', (event) => {
+      const tab = event.target.closest('[data-tab]');
+      if (tab && tab.dataset.tab !== active && commitDraft()) showTab(tab.dataset.tab);
+    }, { signal: modal.signal });
+
+    modal.footer.addEventListener('click', async (event) => {
+      const action = event.target.closest('[data-action]')?.dataset.action;
+      if (action === 'cancel') modal.close();
+
+      if (action === 'save') {
+        if (!commitDraft()) return;
+        const targets = Object.fromEntries(TARGET_TABS.map(([key]) => [key, JSON.parse(drafts[key])]));
+        try {
+          await api.profiles.save({ ...profile, targets });
+          modal.close();
+          toast('Profile changes saved', 'success');
+          await loadProfiles();
+        } catch (err) {
+          toast(`Could not save: ${errorMessage(err)}`, 'error');
+        }
+      }
+
+      if (action === 'restore') {
+        modal.close();
+        const confirmed = await confirmAction({
+          title: 'Restore original?',
+          message: `Discard all edits to "${profile.name}" and restore the settings captured when it was saved?`,
+          confirmText: 'Restore',
+          danger: true,
+        });
+        if (!confirmed) return;
+        try {
+          await api.profiles.restoreOriginal(profile.name);
+          toast('Profile restored to its original snapshot', 'success');
+          await loadProfiles();
+        } catch (err) {
+          toast(errorMessage(err), 'error');
+        }
+      }
+    }, { signal: modal.signal });
+  }
 
   loadProfiles();
-  prefillSummonerName();
 }

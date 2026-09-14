@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' tauri: http://tauri.localhost https://tauri.localhost ipc:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self' 'unsafe-eval' 'unsafe-inline' http://tauri.localhost https://tauri.localhost; connect-src 'self' ipc: http://tauri.localhost https://tauri.localhost https://ddragon.leagueoflegends.com; img-src 'self' data: http://tauri.localhost https://tauri.localhost https://ddragon.leagueoflegends.com https://raw.communitydragon.org https://lolstatic-a.akamaihd.net https://*.akamaihd.net;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: https://ddragon.leagueoflegends.com; connect-src 'self' ipc: http://ipc.localhost https://ddragon.leagueoflegends.com">
   <title>Hextech Riot Settings</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,15 +21,14 @@
       </svg>
       <span class="titlebar__title" data-tauri-drag-region>Hextech Riot Settings</span>
     </div>
-    
-    <!-- Titlebar status widgets (discrete header status area) -->
-    <div id="titlebar-status-widget" class="flex items-center" style="-webkit-app-region: no-drag; margin-left: auto; margin-right: 16px; font-size: 11px; color: var(--text-secondary); display: flex;">
-      <span id="titlebar-account-wrapper" style="border-right: 1px solid rgba(255,255,255,0.08); padding-right: 10px; margin-right: 10px; display: flex; align-items: center;">
-        <span class="status-badge" id="titlebar-lock-badge" style="cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 10px; background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); line-height: 1;" title="Clique para alternar trava de escrita (Cloud Sync)">Lock</span>
-        <span style="color: var(--text-muted); margin-left: 6px;">Conta:</span>
-        <span id="titlebar-account-name" style="font-weight: 600; color: var(--accent-cyan); margin-left: 4px;">Nenhuma</span>
+
+    <div class="titlebar__status" id="titlebar-status-widget">
+      <span class="titlebar__account">
+        <button type="button" class="status-badge status-badge--offline" id="titlebar-lock-badge" style="display: none;" title="Toggle the PersistedSettings.json write lock (pauses Riot cloud sync)">Unlocked</button>
+        <span class="titlebar__account-label">Account:</span>
+        <span class="titlebar__account-name" id="titlebar-account-name">None</span>
       </span>
-      <span class="status-badge status-badge--offline" id="titlebar-client-badge" style="font-size: 10px;">Client Offline</span>
+      <span class="status-badge status-badge--offline" id="titlebar-client-badge">Client Offline</span>
     </div>
 
     <div class="titlebar__controls">
@@ -46,7 +45,7 @@
   </div>
 
   <!-- ═══ Sidebar ═══ -->
-  <nav class="sidebar" id="sidebar">
+  <nav class="sidebar" id="sidebar" aria-label="Main">
     <div class="sidebar__brand">
       <div class="sidebar__logo">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
@@ -58,52 +57,54 @@
       </div>
       <div class="sidebar__brand-text">
         <span class="sidebar__app-name">HRS</span>
-        <span class="sidebar__version">v1.0.0</span>
+        <span class="sidebar__version" id="app-version">v1.0.0</span>
       </div>
     </div>
 
     <div class="sidebar__nav">
-      <button class="nav-item nav-item--active" data-view="dashboard" id="nav-dashboard">
+      <button class="nav-item nav-item--active" data-view="dashboard" id="nav-dashboard" title="Dashboard (Ctrl+1)">
         <svg class="nav-item__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
         </svg>
         <span class="nav-item__label">Dashboard</span>
       </button>
 
-      <button class="nav-item" data-view="lol" id="nav-lol">
+      <button class="nav-item" data-view="lol" id="nav-lol" title="League of Legends (Ctrl+2)">
         <svg class="nav-item__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M14.5 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V7.5L14.5 2z"/><polyline points="14,2 14,8 20,8"/><path d="M12 18v-6"/><path d="M9 15l3 3 3-3"/>
         </svg>
         <span class="nav-item__label">League of Legends</span>
       </button>
 
-      <button class="nav-item" data-view="tft" id="nav-tft">
+      <button class="nav-item" data-view="tft" id="nav-tft" title="Teamfight Tactics (Ctrl+3)">
         <svg class="nav-item__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5"/><line x1="12" y1="22" x2="12" y2="15.5"/><polyline points="22,8.5 12,15.5 2,8.5"/>
         </svg>
         <span class="nav-item__label">Teamfight Tactics</span>
       </button>
 
-      <button class="nav-item" data-view="client" id="nav-client">
+      <button class="nav-item" data-view="client" id="nav-client" title="Client Settings (Ctrl+4)">
         <svg class="nav-item__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
         </svg>
         <span class="nav-item__label">Client Settings</span>
       </button>
 
-      <button class="nav-item" data-view="profiles" id="nav-profiles">
+      <button class="nav-item" data-view="profiles" id="nav-profiles" title="Profiles (Ctrl+5)">
         <svg class="nav-item__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/>
         </svg>
         <span class="nav-item__label">Profiles</span>
       </button>
-      <button class="nav-item" data-view="rawConfigs" id="nav-raw-configs">
+
+      <button class="nav-item" data-view="rawConfigs" id="nav-raw-configs" title="All Configs (Ctrl+6)">
         <svg class="nav-item__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="9" x2="15" y2="9"></line><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="13" y2="17"></line>
         </svg>
         <span class="nav-item__label">All Configs</span>
       </button>
-      <button class="nav-item" data-view="appSettings" id="nav-app-settings">
+
+      <button class="nav-item" data-view="appSettings" id="nav-app-settings" title="App Settings (Ctrl+7)">
         <svg class="nav-item__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
         </svg>
@@ -125,11 +126,11 @@
   </main>
 
   <!-- ═══ Toast Container ═══ -->
-  <div class="toast-container" id="toast-container"></div>
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
 
   <!-- ═══ Modal Container ═══ -->
   <div class="modal-overlay" id="modal-overlay" style="display:none;">
-    <div class="modal" id="modal">
+    <div class="modal" id="modal" role="dialog" aria-modal="true" aria-labelledby="modal-header">
       <div class="modal-header" id="modal-header"></div>
       <div class="modal-body" id="modal-body"></div>
       <div class="modal-footer" id="modal-footer"></div>
@@ -137,6 +138,7 @@
   </div>
 
   <!-- ═══ Scripts ═══ -->
+  <script src="vendor/js-yaml.min.js"></script>
   <script src="tauri-bridge.js" type="module"></script>
   <script src="app.js" type="module"></script>
 </body>

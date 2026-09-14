@@ -1,279 +1,358 @@
 /**
- * App Controller — Router, Toast, Modal, and View Lifecycle
- *
- * Manages navigation between views, provides global toast notifications
- * and modal dialogs, and handles the custom title bar controls.
+ * App shell: router, toasts, modals, title bar status and account automation
+ * (auto profile switcher, automatic backups and global hotkeys).
  */
 
-// ─── View Imports ──────────────────────────────────────────────────────────
-import { render as renderDashboard, mount as mountDashboard } from './views/dashboard.js';
-import { render as renderLoL, mount as mountLoL } from './views/lol-settings.js';
-import { render as renderTFT, mount as mountTFT } from './views/tft-settings.js';
-import { render as renderClient, mount as mountClient } from './views/client-settings.js';
-import { render as renderProfiles, mount as mountProfiles } from './views/profiles.js';
-import { render as renderRaw, mount as mountRaw } from './views/raw-configs.js';
-import { render as renderAppSettings, mount as mountAppSettings } from './views/app-settings.js';
+import { escapeHtml } from './lib/html.js';
+import { KEYS, readFlag, readJson, readText, writeFlag, writeText } from './lib/storage.js';
+import { errorMessage } from './lib/ui.js';
+import * as appSettings from './views/app-settings.js';
+import * as client from './views/client-settings.js';
+import * as dashboard from './views/dashboard.js';
+import * as lol from './views/lol-settings.js';
+import * as profiles from './views/profiles.js';
+import * as rawConfigs from './views/raw-configs.js';
+import * as tft from './views/tft-settings.js';
 
-// ─── View Registry ─────────────────────────────────────────────────────────
-const views = {
-  dashboard: { render: renderDashboard, mount: mountDashboard },
-  lol:       { render: renderLoL,       mount: mountLoL },
-  tft:       { render: renderTFT,       mount: mountTFT },
-  client:    { render: renderClient,    mount: mountClient },
-  profiles:  { render: renderProfiles,  mount: mountProfiles },
-  rawConfigs: { render: renderRaw,       mount: mountRaw },
-  appSettings: { render: renderAppSettings, mount: mountAppSettings },
+const VIEWS = { dashboard, lol, tft, client, profiles, rawConfigs, appSettings };
+const VIEW_ORDER = ['dashboard', 'lol', 'tft', 'client', 'profiles', 'rawConfigs', 'appSettings'];
+const STATUS_POLL_MS = 8000;
+const AUTOMATION_INTERVAL_MS = 60_000;
+const BACKUP_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+
+const api = window.api;
+const byId = (id) => document.getElementById(id);
+
+// ─── Toasts ─────────────────────────────────────────────────────────────────
+
+const TOAST_ICONS = {
+  success: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20,6 9,17 4,12"/></svg>`,
+  error: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
+  info: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`,
 };
 
-let currentView = 'dashboard';
-let dashboardInterval = null;
-
-// ─── DOM References ────────────────────────────────────────────────────────
-const content = document.getElementById('content');
-const toastContainer = document.getElementById('toast-container');
-const modalOverlay = document.getElementById('modal-overlay');
-const modalHeader = document.getElementById('modal-header');
-const modalBody = document.getElementById('modal-body');
-const modalFooter = document.getElementById('modal-footer');
-
-// ─── Router ────────────────────────────────────────────────────────────────
-
-function navigateTo(viewName) {
-  if (!views[viewName]) return;
-
-  // Cleanup previous view
-  if (currentView === 'dashboard' && dashboardInterval) {
-    clearInterval(dashboardInterval);
-    dashboardInterval = null;
-  }
-
-  currentView = viewName;
-
-  // Update nav active state
-  document.querySelectorAll('.nav-item').forEach(item => {
-    item.classList.toggle('nav-item--active', item.dataset.view === viewName);
-  });
-
-  // Render view
-  content.innerHTML = views[viewName].render();
-
-  // Add entrance animation
-  const firstChild = content.firstElementChild;
-  if (firstChild) {
-    firstChild.classList.add('fade-in');
-  }
-
-  // Mount view (attach event listeners)
-  try {
-    views[viewName].mount();
-  } catch (err) {
-    console.error(`Failed to mount view "${viewName}":`, err);
-  }
-}
-
-// ─── Toast Notifications ───────────────────────────────────────────────────
-
-let toastId = 0;
-
-/**
- * Show a toast notification.
- *
- * @param {string} message
- * @param {'success' | 'error' | 'info'} [type='info']
- * @param {number} [duration=3500]
- */
-function showToast(message, type = 'info', duration = 3500) {
-  const id = `toast-${++toastId}`;
-
-  const iconMap = {
-    success: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20,6 9,17 4,12"/></svg>`,
-    error: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>`,
-    info: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>`,
-  };
-
+/** @param {'success' | 'error' | 'info'} type */
+function showToast(message, type = 'info') {
+  const lifetime = type === 'error' ? 6000 : 3500;
   const toast = document.createElement('div');
   toast.className = `toast toast--${type}`;
-  toast.id = id;
+  toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
   toast.innerHTML = `
-    <div class="toast__icon">${iconMap[type] || iconMap.info}</div>
-    <div class="toast__message">${message}</div>
+    <div class="toast__icon">${TOAST_ICONS[type] ?? TOAST_ICONS.info}</div>
+    <div class="toast__message"></div>
     <button class="toast__close" aria-label="Close">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
-    <div class="toast__progress" style="animation-duration: ${duration}ms;"></div>
-  `;
+    <div class="toast__progress" style="animation-duration: ${lifetime}ms;"></div>`;
+  toast.querySelector('.toast__message').textContent = String(message);
 
-  toastContainer.appendChild(toast);
-
-  // Trigger entrance animation
+  let dismissed = false;
+  const dismiss = () => {
+    if (dismissed) return;
+    dismissed = true;
+    toast.classList.add('toast--exit');
+    setTimeout(() => toast.remove(), 300);
+  };
+  toast.querySelector('.toast__close').addEventListener('click', dismiss);
+  byId('toast-container').appendChild(toast);
   requestAnimationFrame(() => toast.classList.add('toast--visible'));
-
-  // Close button
-  toast.querySelector('.toast__close').addEventListener('click', () => dismissToast(id));
-
-  // Auto-dismiss
-  setTimeout(() => dismissToast(id), duration);
+  setTimeout(dismiss, lifetime);
 }
 
-function dismissToast(id) {
-  const toast = document.getElementById(id);
-  if (!toast) return;
-  toast.classList.add('toast--exit');
-  setTimeout(() => toast.remove(), 300);
-}
+// ─── Modals ─────────────────────────────────────────────────────────────────
 
-// ─── Modal ─────────────────────────────────────────────────────────────────
+let activeModal = null;
 
 /**
- * Show a modal dialog.
- *
- * @param {{ title: string, body: string, confirmText?: string, cancelText?: string, danger?: boolean }} options
- * @returns {Promise<boolean>}  Resolves `true` if confirmed, `false` if cancelled.
+ * Opens the shared modal. `body` and `footer` are HTML the caller has escaped.
+ * Returns a handle whose `signal` aborts when the modal closes, so listeners
+ * registered with it never leak into the next modal.
  */
-function showModal(options) {
-  const {
-    title = 'Confirm',
-    body = '',
-    confirmText = 'Confirm',
-    cancelText = 'Cancel',
-    danger = false,
-  } = options;
+function openModal({ title, body, footer, wide = false }) {
+  activeModal?.close();
 
+  const overlay = byId('modal-overlay');
+  const controller = new AbortController();
+  byId('modal').classList.toggle('modal--wide', wide);
+  byId('modal-header').innerHTML = `<h3>${escapeHtml(title)}</h3>`;
+  byId('modal-body').innerHTML = body;
+  byId('modal-footer').innerHTML = footer;
+  overlay.style.display = 'flex';
+  requestAnimationFrame(() => overlay.classList.add('modal-overlay--visible'));
+
+  const modal = {
+    body: byId('modal-body'),
+    footer: byId('modal-footer'),
+    signal: controller.signal,
+    onClose: null,
+    close() {
+      if (activeModal !== modal) return;
+      activeModal = null;
+      controller.abort();
+      overlay.classList.remove('modal-overlay--visible');
+      setTimeout(() => {
+        if (!activeModal) overlay.style.display = 'none';
+      }, 200);
+      modal.onClose?.();
+    },
+  };
+
+  overlay.addEventListener('click', (e) => e.target === overlay && modal.close(), { signal: controller.signal });
+  document.addEventListener('keydown', (e) => e.key === 'Escape' && modal.close(), { signal: controller.signal });
+  activeModal = modal;
+  return modal;
+}
+
+/** Confirmation dialog; resolves true when confirmed. `body` is HTML. */
+function showModal({ title = 'Confirm', body = '', confirmText = 'Confirm', cancelText = 'Cancel', danger = false }) {
   return new Promise((resolve) => {
-    modalHeader.innerHTML = `<h3>${title}</h3>`;
-    modalBody.innerHTML = body;
-    modalFooter.innerHTML = `
-      <button class="btn btn--secondary" id="modal-cancel">${cancelText}</button>
-      <button class="btn ${danger ? 'btn--danger' : 'btn--primary'}" id="modal-confirm">${confirmText}</button>
-    `;
-
-    modalOverlay.style.display = 'flex';
-    requestAnimationFrame(() => modalOverlay.classList.add('modal-overlay--visible'));
-
-    const cleanup = (result) => {
-      modalOverlay.classList.remove('modal-overlay--visible');
-      setTimeout(() => { modalOverlay.style.display = 'none'; }, 200);
-      resolve(result);
-    };
-
-    document.getElementById('modal-confirm').addEventListener('click', () => cleanup(true), { once: true });
-    document.getElementById('modal-cancel').addEventListener('click', () => cleanup(false), { once: true });
-    modalOverlay.addEventListener('click', (e) => {
-      if (e.target === modalOverlay) cleanup(false);
-    }, { once: true });
+    const modal = openModal({
+      title,
+      body,
+      footer: `
+        <button class="btn btn--secondary" data-action="cancel">${escapeHtml(cancelText)}</button>
+        <button class="btn ${danger ? 'btn--danger' : 'btn--primary'}" data-action="confirm">${escapeHtml(confirmText)}</button>`,
+    });
+    let confirmed = false;
+    modal.onClose = () => resolve(confirmed);
+    const confirmButton = modal.footer.querySelector('[data-action="confirm"]');
+    confirmButton.addEventListener('click', () => { confirmed = true; modal.close(); }, { signal: modal.signal });
+    modal.footer.querySelector('[data-action="cancel"]').addEventListener('click', () => modal.close(), { signal: modal.signal });
+    confirmButton.focus();
   });
 }
 
-// ─── Global Exports ────────────────────────────────────────────────────────
-// Make these available to view modules
 window.showToast = showToast;
 window.showModal = showModal;
-window.navigateTo = navigateTo;
-window.setDashboardInterval = (id) => { dashboardInterval = id; };
+window.openModal = openModal;
 
-// Load saved theme on startup
-const savedTheme = localStorage.getItem('app-theme') || 'default';
-if (savedTheme !== 'default') {
-  document.body.classList.add(`theme-` + savedTheme);
-}
+// ─── Router ─────────────────────────────────────────────────────────────────
 
-// ─── Sidebar Navigation ───────────────────────────────────────────────────
+let currentView = null;
 
-document.querySelectorAll('.nav-item').forEach(item => {
-  item.addEventListener('click', () => {
-    const viewName = item.dataset.view;
-    if (viewName) navigateTo(viewName);
-  });
-});
+function navigateTo(name) {
+  const view = VIEWS[name];
+  if (!view) return;
 
-// ─── Status Polling (Titlebar & Sidebar) ────────────────────────────────────
-
-async function updateTitlebarAndSidebarStatus() {
   try {
-    const running = await window.api.status.isClientRunning();
-    
-    // 1. Sidebar status badge
-    const badge = document.getElementById('client-status-badge');
-    if (badge) {
-      if (running) {
-        badge.className = 'status-badge status-badge--online';
-        badge.querySelector('.status-badge__text').textContent = 'Client Online';
-      } else {
-        badge.className = 'status-badge status-badge--offline';
-        badge.querySelector('.status-badge__text').textContent = 'Client Offline';
-      }
-    }
-
-    // 2. Titlebar client status badge
-    const titlebarClientBadge = document.getElementById('titlebar-client-badge');
-    if (titlebarClientBadge) {
-      titlebarClientBadge.className = running ? 'status-badge status-badge--online' : 'status-badge status-badge--offline';
-      titlebarClientBadge.textContent = running ? 'Client Online' : 'Client Offline';
-    }
-
-    // 3. Titlebar active account name
-    try {
-      const profile = await window.api.client.getCurrentSummonerProfile();
-      const titlebarAccountName = document.getElementById('titlebar-account-name');
-      if (titlebarAccountName) {
-        titlebarAccountName.textContent = profile ? profile.name : 'Nenhuma';
-      }
-    } catch {}
-
-    // 4. Titlebar lock status
-    const paths = await window.api.paths.resolve();
-    if (paths && paths.persistedSettings) {
-      const isLocked = await window.api.lock.isReadOnly(paths.persistedSettings);
-      const titlebarLockBadge = document.getElementById('titlebar-lock-badge');
-      if (titlebarLockBadge) {
-        titlebarLockBadge.className = isLocked ? 'status-badge status-badge--locked' : 'status-badge status-badge--offline';
-        titlebarLockBadge.textContent = isLocked ? (isLocked ? 'Locked' : 'Unlocked') : 'Unlocked';
-      }
-    }
+    currentView?.unmount?.();
   } catch (err) {
-    console.warn('Status polling error:', err);
+    console.error('Failed to unmount view:', err);
   }
+  activeModal?.close();
+  currentView = view;
+
+  document.querySelectorAll('.nav-item').forEach((item) => {
+    const active = item.dataset.view === name;
+    item.classList.toggle('nav-item--active', active);
+    item.setAttribute('aria-current', active ? 'page' : 'false');
+  });
+
+  const content = byId('content');
+  content.innerHTML = view.render();
+  content.scrollTop = 0;
+  content.firstElementChild?.classList.add('fade-in');
+
+  Promise.resolve()
+    .then(() => view.mount())
+    .catch((err) => {
+      console.error(`Failed to mount view "${name}":`, err);
+      showToast(`This page failed to load: ${errorMessage(err)}`, 'error');
+    });
 }
 
-// Publish to window so tauri-bridge or views can trigger updates
-window.updateTitlebarAndSidebarStatus = updateTitlebarAndSidebarStatus;
+window.navigateTo = navigateTo;
 
-// Poll status every 8 seconds
-updateTitlebarAndSidebarStatus();
-setInterval(updateTitlebarAndSidebarStatus, 8000);
-
-// ─── Keyboard Shortcuts ────────────────────────────────────────────────────
+document.querySelectorAll('.nav-item').forEach((item) => {
+  item.addEventListener('click', () => navigateTo(item.dataset.view));
+});
 
 document.addEventListener('keydown', (e) => {
-  // Ctrl+1–5 for quick nav
-  if (e.ctrlKey && e.key >= '1' && e.key <= '7') {
-    e.preventDefault();
-    const viewNames = ['dashboard', 'lol', 'tft', 'client', 'profiles', 'rawConfigs', 'appSettings'];
-    navigateTo(viewNames[parseInt(e.key) - 1]);
+  if (!e.ctrlKey || e.altKey || activeModal || !/^[1-7]$/.test(e.key)) return;
+  e.preventDefault();
+  navigateTo(VIEW_ORDER[Number(e.key) - 1]);
+});
+
+// ─── Status (title bar + sidebar) ───────────────────────────────────────────
+
+/** Shared, read-only for views; updated on every status poll ("app:status" event). */
+const appState = { account: null, processes: [], clientRunning: false, gameRunning: false, persistedLocked: null };
+window.appState = appState;
+
+function renderStatusChrome() {
+  const clientText = appState.gameRunning ? 'In Game' : appState.clientRunning ? 'Client Online' : 'Client Offline';
+  const clientClass = `status-badge status-badge--${appState.clientRunning || appState.gameRunning ? 'online' : 'offline'}`;
+
+  const sidebarBadge = byId('client-status-badge');
+  sidebarBadge.className = clientClass;
+  sidebarBadge.querySelector('.status-badge__text').textContent = clientText;
+
+  const titlebarBadge = byId('titlebar-client-badge');
+  titlebarBadge.className = clientClass;
+  titlebarBadge.textContent = clientText;
+
+  byId('titlebar-account-name').textContent = appState.account?.name ?? 'None';
+
+  const lockBadge = byId('titlebar-lock-badge');
+  lockBadge.style.display = appState.persistedLocked === null ? 'none' : '';
+  lockBadge.className = `status-badge status-badge--${appState.persistedLocked ? 'locked' : 'offline'}`;
+  lockBadge.textContent = appState.persistedLocked ? 'Locked' : 'Unlocked';
+}
+
+let statusTimer = null;
+let statusInFlight = null;
+
+async function pollStatus() {
+  const [snapshot, account, locked] = await Promise.all([
+    api.status.snapshot().catch(() => null),
+    api.client.getCurrentSummonerProfile(),
+    api.paths
+      .resolve()
+      .then((paths) => api.lock.isReadOnly(paths.persistedSettings))
+      .catch(() => null),
+  ]);
+  if (snapshot) Object.assign(appState, snapshot);
+  appState.account = account;
+  appState.persistedLocked = locked;
+
+  renderStatusChrome();
+  window.dispatchEvent(new CustomEvent('app:status', { detail: appState }));
+
+  if (account?.live) {
+    await runAccountAutomation(account).catch((err) => console.warn('Account automation failed:', err));
+  }
+}
+
+/** Refreshes now and restarts the polling timer. Concurrent calls share one refresh. */
+function refreshStatus() {
+  clearTimeout(statusTimer);
+  statusInFlight ??= pollStatus()
+    .catch((err) => console.warn('Status refresh failed:', err))
+    .finally(() => {
+      statusInFlight = null;
+      statusTimer = setTimeout(refreshStatus, STATUS_POLL_MS);
+    });
+  return statusInFlight;
+}
+
+window.refreshStatus = refreshStatus;
+
+async function toggleCloudSyncLock() {
+  try {
+    const { persistedSettings } = await api.paths.resolve();
+    const locked = await api.lock.isReadOnly(persistedSettings);
+    if (locked) await api.lock.removeReadOnly(persistedSettings);
+    else await api.lock.setReadOnly(persistedSettings);
+    showToast(
+      locked
+        ? 'PersistedSettings.json unlocked: Riot cloud sync can update it again'
+        : 'PersistedSettings.json locked: Riot cloud sync can no longer overwrite it',
+      'success',
+    );
+    await refreshStatus();
+  } catch (err) {
+    showToast(`Could not change the lock: ${errorMessage(err)}`, 'error');
+  }
+}
+
+window.toggleCloudSyncLock = toggleCloudSyncLock;
+
+// ─── Account automation ─────────────────────────────────────────────────────
+
+let lastAutomation = { account: null, at: 0 };
+
+async function runAccountAutomation(account) {
+  if (appState.gameRunning) return;
+
+  const accountChanged = readText(KEYS.lastAccount) !== account.name;
+  if (accountChanged) {
+    writeText(KEYS.lastAccount, account.name);
+    writeText(KEYS.lastAutoApplied, null);
+  }
+  const recentlyRan = lastAutomation.account === account.name && Date.now() - lastAutomation.at < AUTOMATION_INTERVAL_MS;
+  if (!accountChanged && recentlyRan) return;
+  lastAutomation = { account: account.name, at: Date.now() };
+
+  await applyLinkedProfile(account);
+  await ensureAccountBackup(account);
+}
+
+async function applyLinkedProfile(account) {
+  if (!readFlag(KEYS.autoSwitcher, true)) return;
+  const profileName = readJson(KEYS.accountMappings, {})[account.name];
+  const combination = `${account.name}:${profileName}`;
+  if (!profileName || readText(KEYS.lastAutoApplied) === combination) return;
+
+  // Recorded before applying so a failure is reported once, not on every poll.
+  writeText(KEYS.lastAutoApplied, combination);
+  try {
+    await api.profiles.applyAll(await api.profiles.load(profileName));
+    showToast(`Auto Switcher: applied "${profileName}" for ${account.name}`, 'success');
+  } catch (err) {
+    showToast(`Auto Switcher could not apply "${profileName}": ${errorMessage(err)}`, 'error');
+  }
+}
+
+async function ensureAccountBackup(account) {
+  const name = account.name.toLowerCase();
+  const matches = (await api.profiles.list()).filter(
+    (p) =>
+      p.name.toLowerCase() === name ||
+      p.name.toLowerCase().startsWith(`${name}_`) ||
+      p.meta?.summonerName?.toLowerCase() === name,
+  );
+
+  if (!matches.length) {
+    // Only once per account, so deleting that profile is respected.
+    if (readFlag(KEYS.autoSavedAccount(account.name), false)) return;
+    await api.profiles.quickSave(account.name);
+    writeFlag(KEYS.autoSavedAccount(account.name), true);
+    showToast(`New account detected: settings saved as profile "${account.name}"`, 'success');
+    return;
+  }
+
+  const newest = Math.max(...matches.map((p) => Date.parse(p.createdAt) || 0));
+  if (Date.now() - newest > BACKUP_MAX_AGE_MS) {
+    const backupName = `${account.name}_${new Date().toISOString().slice(0, 10)}`;
+    await api.profiles.quickSave(backupName);
+    showToast(`Monthly backup saved as "${backupName}"`, 'success');
+  }
+}
+
+// ─── Global hotkeys ─────────────────────────────────────────────────────────
+
+api.system.setGlobalHotkeys(readFlag(KEYS.globalHotkeys, true)).catch((err) => {
+  console.warn('Could not configure global hotkeys:', err);
+});
+
+api.profiles.onGlobalHotkey(async (slot) => {
+  const slotName = `Slot_${slot}`;
+  try {
+    await api.profiles.applyAll(await api.profiles.load(slotName));
+    showToast(`Ctrl+Alt+${slot}: applied Slot ${slot}`, 'success');
+  } catch (err) {
+    showToast(`Ctrl+Alt+${slot}: ${errorMessage(err)}`, 'error');
   }
 });
 
-// ─── Initial Load ──────────────────────────────────────────────────────────
+// ─── Startup ────────────────────────────────────────────────────────────────
+
+byId('btn-minimize').addEventListener('click', () => api.window.minimize());
+byId('btn-maximize').addEventListener('click', () => api.window.maximize());
+byId('btn-close').addEventListener('click', () => api.window.close());
+byId('titlebar-lock-badge').addEventListener('click', toggleCloudSyncLock);
+
+const savedTheme = readText(KEYS.theme, 'default');
+if (/^[a-z]+$/.test(savedTheme) && savedTheme !== 'default') {
+  document.body.classList.add(`theme-${savedTheme}`);
+}
+
+window.__TAURI__.app
+  ?.getVersion()
+  .then((version) => {
+    byId('app-version').textContent = `v${version}`;
+  })
+  .catch(() => {});
 
 navigateTo('dashboard');
-
-// Listen for auto-save events from backend
-window.api.profiles.onAutoSave((_event, summonerName) => {
-  window.showToast(`Perfil da conta "${summonerName}" salvo automaticamente!`, 'success');
-});
-
-// Listen for global hotkeys (Ctrl + Alt + 1/2)
-if (window.api.profiles.onGlobalHotkey) {
-  window.api.profiles.onGlobalHotkey(async (hotkeyId) => {
-    const hotkeysEnabled = localStorage.getItem('app-settings-global-hotkeys') !== 'false';
-    if (!hotkeysEnabled) return;
-    try {
-      const slotName = hotkeyId === 1 ? 'Slot_1' : 'Slot_2';
-      const profile = await window.api.profiles.load(slotName);
-      await window.api.profiles.applyAll(profile, { force: true });
-      window.showToast(`Global Hotkey: Applied ${slotName} settings!`, 'success');
-    } catch (err) {
-      window.showToast(`Global Hotkey error: Slot may be empty or client is open`, 'error');
-    }
-  });
-}
+refreshStatus();

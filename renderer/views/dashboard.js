@@ -1,18 +1,67 @@
-// renderer/views/dashboard.js
-//
-// Dashboard view. Splits cleanly into:
-//   - render() : pure HTML template
-//   - mount()  : wires up data fetching, event handlers and refreshes
-//
-// Module-level state keeps the refresh interval across mount/unmount cycles.
+// Dashboard: account status, profiles, quick slots, backups and quick actions.
+// Live status (account, processes, lock) is pushed by app.js through the
+// "app:status" event; this view only loads files and profiles itself.
 
-const FALLBACK_PROFILE_ICON = 29;          // ddragon default icon id
-const ACTIVE_ACCOUNT_REFRESH_MS = 10_000;  // status strip refresh cadence
-const DD_CDN_FALLBACK = '14.10.1';
+import { FALLBACK_ICON_URL, attachImageFallbacks, latestVersion, profileIconUrl } from '../lib/ddragon.js';
+import { escapeHtml } from '../lib/html.js';
+import { SLOT_NAMES, isSlotProfile } from '../lib/profile-name.js';
+import { applyValue, iniKey } from '../lib/settings-model.js';
+import { KEYS, readJson, writeJson, writeText } from '../lib/storage.js';
+import { confirmAction, errorMessage, toast, withBusyButtons } from '../lib/ui.js';
 
-let refreshInterval = null;
+const WINDOW_MODES = { 0: 'Fullscreen', 1: 'Windowed', 2: 'Borderless' };
 
-// ─── render() ────────────────────────────────────────────────────────────────
+// Lowest-cost values for settings that exist in game.cfg. Keys missing from
+// the user's file are skipped rather than created.
+const FPS_SETTINGS = {
+  General: { AntiAliasing: '0', ShadowsEnabled: '0', EffectsQuality: '0', EnvironmentQuality: '0', CharacterQuality: '1' },
+  Performance: {
+    ShadowsEnabled: '0',
+    ShadowQuality: '0',
+    EffectsQuality: '0',
+    EnvironmentQuality: '0',
+    CharacterQuality: '1',
+    EnableFXAA: '0',
+    EnableHUDAnimations: '0',
+  },
+};
+
+const LOGO_SVG = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>`;
+
+let mounted = false;
+let renderedAccount;
+
+const api = () => window.api;
+const byId = (id) => document.getElementById(id);
+
+function formatDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value ?? '') : date.toLocaleString();
+}
+
+// ─── Template ───────────────────────────────────────────────────────────────
+
+function summaryItem(id, label) {
+  return `
+    <div class="summary-item" style="background: rgba(255,255,255,0.03); padding: 14px; border-radius: var(--radius-md); border: 1px solid var(--glass-border); display: flex; flex-direction: column; min-width: 120px;">
+      <span style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">${label}</span>
+      <span id="${id}" style="font-size: 15px; font-weight: 700; color: var(--accent-cyan); font-family: monospace; margin-top: 4px; line-height: 1.2;">…</span>
+    </div>`;
+}
+
+function slotCard(index) {
+  return `
+    <div class="dashboard-slot-card">
+      <div>
+        <h4 style="font-weight: 600; color: var(--accent-cyan);">Slot ${index} <span class="text-xs text-muted" style="font-weight: 400;">Ctrl+Alt+${index}</span></h4>
+        <p class="text-sm text-muted" id="slot-${index}-status" style="margin: 0.5rem 0 1rem 0;">Empty</p>
+      </div>
+      <div style="display: flex; gap: 0.5rem;">
+        <button data-slot-save="${index}" class="btn btn--primary btn--sm">Save Current</button>
+        <button data-slot-apply="${index}" class="btn btn--secondary btn--sm" style="display: none;">Apply</button>
+      </div>
+    </div>`;
+}
 
 export function render() {
   return `
@@ -22,19 +71,18 @@ export function render() {
         <p class="subtitle" style="font-size: 13px;">Monitor and manage your Riot Games configuration</p>
       </header>
 
-      <!-- ═══ ACTIVE ACCOUNT (compact strip) ═══ -->
       <section class="dashboard-status-strip" aria-label="Active account status">
-        <div class="dashboard-status-strip__avatar" id="strip-avatar"></div>
+        <div class="dashboard-status-strip__avatar" id="strip-avatar">${LOGO_SVG}</div>
 
         <div class="dashboard-status-strip__item">
           <span class="dashboard-status-strip__label">Active Account</span>
           <span class="dashboard-status-strip__value" id="strip-account-name">Detecting…</span>
-          <span class="dashboard-status-strip__level" id="strip-account-level" style="display:none;"></span>
+          <span class="dashboard-status-strip__level" id="strip-account-level" style="display: none;"></span>
         </div>
 
         <div class="dashboard-status-strip__item">
           <span class="dashboard-status-strip__label">Client Status</span>
-          <span class="dashboard-status-strip__value" id="strip-client-status">
+          <span class="dashboard-status-strip__value">
             <span class="status-badge status-badge--offline" id="strip-client-badge">Offline</span>
             <span class="dashboard-status-strip__detail" id="strip-client-detail"></span>
           </span>
@@ -42,13 +90,13 @@ export function render() {
 
         <div class="dashboard-status-strip__item dashboard-status-strip__item--lock">
           <span class="dashboard-status-strip__label">Cloud Sync Lock</span>
-          <span class="dashboard-status-strip__value" id="strip-lock">
+          <span class="dashboard-status-strip__value">
             <span class="status-badge status-badge--offline" id="strip-lock-badge">—</span>
           </span>
         </div>
 
         <div class="dashboard-status-strip__action">
-          <button id="btn-toggle-lock" class="btn btn--secondary btn--sm" style="display:none;">Toggle Lock</button>
+          <button id="btn-toggle-lock" class="btn btn--secondary btn--sm" style="display: none;">Toggle Lock</button>
         </div>
 
         <div class="dashboard-status-strip__files">
@@ -59,11 +107,10 @@ export function render() {
         </div>
       </section>
 
-      <!-- ═══ CUSTOM PROFILES (cards acima de tudo) ═══ -->
       <section class="card" style="margin-top: 18px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
           <h3 style="font-size: 16px; margin: 0;">🎴 Custom Profiles</h3>
-          <div style="display:flex;gap:8px;">
+          <div style="display: flex; gap: 8px;">
             <button id="btn-refresh-profiles" class="btn btn--secondary btn--sm">Refresh</button>
             <button id="btn-quick-save" class="btn btn--primary btn--sm">Save Current</button>
           </div>
@@ -71,36 +118,27 @@ export function render() {
         <div class="dashboard-profiles-grid" id="dashboard-profiles-grid"></div>
       </section>
 
-      <!-- ═══ ACTIVE GAME SETTINGS ═══ -->
       <section class="card dashboard-summary-card" style="margin-top: 18px;">
         <h3 style="font-size: 16px;">⚙️ Active Game Settings</h3>
-        <div id="active-settings-summary-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-top: 16px;">
-          ${summaryItem('summary-resolution', 'RESOLUTION')}
-          ${summaryItem('summary-windowmode', 'WINDOW MODE')}
-          ${summaryItem('summary-volume', 'MASTER VOLUME')}
-          ${summaryItem('summary-language', 'CLIENT LANGUAGE')}
-          ${summaryItemFiles('summary-files-status', 'CONFIG FILES STATUS')}
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 16px; margin-top: 16px;">
+          ${summaryItem('summary-resolution', 'Resolution')}
+          ${summaryItem('summary-windowmode', 'Window Mode')}
+          ${summaryItem('summary-volume', 'Master Volume')}
+          ${summaryItem('summary-language', 'Client Language')}
         </div>
       </section>
 
-      <!-- ═══ QUICK SLOTS ═══ -->
       <section class="card dashboard-slots-section" style="margin-top: 18px;">
         <h3 style="font-size: 16px;">💾 Quick Save Slots</h3>
-        <div class="dashboard-slots-grid">
-          ${slotCard(1)}
-          ${slotCard(2)}
-        </div>
+        <div class="dashboard-slots-grid">${SLOT_NAMES.map((_, i) => slotCard(i + 1)).join('')}</div>
       </section>
 
-      <!-- ═══ BACKUP TIMELINE ═══ -->
       <section class="card" style="margin-top: 18px;">
         <h3 style="font-size: 16px;">📜 Backup Timeline</h3>
-        <div id="change-history-timeline" style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;">
-          <p class="text-sm text-muted">Loading history...</p>
-        </div>
+        <p class="text-xs text-muted" style="margin: 4px 0 0;">A backup of the current files is saved automatically before any change. The last 5 are kept.</p>
+        <div id="change-history-timeline" style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;"></div>
       </section>
 
-      <!-- ═══ QUICK ACTIONS ═══ -->
       <section class="card quick-actions" style="margin-top: 18px; margin-bottom: 0;">
         <h3 style="font-size: 16px;">⚡ Quick Actions</h3>
         <div style="display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap;">
@@ -109,672 +147,420 @@ export function render() {
           <button id="btn-refresh-status" class="btn btn--secondary">Refresh Status</button>
         </div>
       </section>
-    </div>
-  `;
+    </div>`;
 }
 
-// Tiny HTML helpers used inside the template above.
-
-function summaryItem(id, label) {
-  return `
-    <div class="summary-item" style="background: rgba(255,255,255,0.03); padding: 14px; border-radius: var(--radius-md); border: 1px solid var(--glass-border); display: flex; flex-direction: column; min-width: 120px;">
-      <span style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">${label}</span>
-      <span id="${id}" style="font-size: 15px; font-weight: 700; color: var(--accent-cyan); font-family: monospace; margin-top: 4px; line-height: 1.2;">Loading...</span>
-    </div>
-  `;
-}
-
-function summaryItemFiles(id, label) {
-  return `
-    <div class="summary-item" style="background: rgba(255,255,255,0.03); padding: 14px; border-radius: var(--radius-md); border: 1px solid var(--glass-border); display: flex; flex-direction: column; min-width: 160px;">
-      <span style="font-size: 9px; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">${label}</span>
-      <div id="${id}" style="font-size: 10px; margin-top: 4px; display: flex; gap: 5px; flex-wrap: wrap;">
-        <span class="text-xs text-muted">Loading...</span>
-      </div>
-    </div>
-  `;
-}
-
-function slotCard(idx) {
-  return `
-    <div class="dashboard-slot-card">
-      <div>
-        <h4 style="font-weight: 600; color: var(--accent-cyan);">Slot ${idx}</h4>
-        <p class="text-sm text-muted" id="slot-${idx}-status" style="margin: 0.5rem 0 1rem 0;">Empty</p>
-      </div>
-      <div style="display: flex; gap: 0.5rem;">
-        <button id="btn-save-slot-${idx}" class="btn btn--primary btn--sm">Save Current</button>
-        <button id="btn-apply-slot-${idx}" class="btn btn--secondary btn--sm" style="display: none;">Apply</button>
-      </div>
-    </div>
-  `;
-}
-
-// ─── mount() ─────────────────────────────────────────────────────────────────
+// ─── Lifecycle ──────────────────────────────────────────────────────────────
 
 export async function mount() {
-  // Clear any prior interval (mounting twice without unmount can happen in dev).
-  if (refreshInterval) {
-    clearInterval(refreshInterval);
-    refreshInterval = null;
-  }
-
-  const ddragonVersion = await fetchDdragonVersion();
-  bindStaticHandlers();
-  await refreshAll(ddragonVersion);
-  refreshInterval = setInterval(() => refreshAll(ddragonVersion), ACTIVE_ACCOUNT_REFRESH_MS);
+  mounted = true;
+  renderedAccount = undefined;
+  window.addEventListener('app:status', onStatus);
+  bindHandlers();
+  onStatus();
+  await Promise.allSettled([refreshFileStatus(), refreshActiveGameSettings(), refreshProfiles(), refreshHistory()]);
 }
 
-// ─── data fetchers ───────────────────────────────────────────────────────────
-
-async function fetchDdragonVersion() {
-  try {
-    const res = await fetch('https://ddragon.leagueoflegends.com/api/versions.json');
-    if (!res.ok) return DD_CDN_FALLBACK;
-    const versions = await res.json();
-    return Array.isArray(versions) && versions.length > 0 ? versions[0] : DD_CDN_FALLBACK;
-  } catch {
-    return DD_CDN_FALLBACK;
-  }
+export function unmount() {
+  mounted = false;
+  window.removeEventListener('app:status', onStatus);
 }
 
-async function refreshAll(ddragonVersion) {
-  await Promise.allSettled([
-    refreshStatusStrip(ddragonVersion),
-    refreshActiveGameSettings(),
-    refreshSlots(),
-    refreshProfilesGrid(ddragonVersion),
-    refreshChangeHistory()
-  ]);
-
-  // Auto profile switcher / auto-backup logic — relies on the active account
-  // being known, so we run it after the status strip finished.
-  try {
-    await runAutoProfileLogic();
-  } catch (err) {
-    console.warn('Auto profile switcher/backup check failed:', err);
-  }
+function onStatus() {
+  if (!mounted || !window.appState) return;
+  renderStatusStrip(window.appState);
+  const accountName = window.appState.account?.name ?? null;
+  if (renderedAccount !== undefined && accountName !== renderedAccount) refreshProfiles();
 }
 
-// ─── status strip ────────────────────────────────────────────────────────────
+// ─── Status strip ───────────────────────────────────────────────────────────
 
-async function refreshStatusStrip(ddragonVersion) {
-  const nameEl = document.getElementById('strip-account-name');
-  const levelEl = document.getElementById('strip-account-level');
-  const avatarEl = document.getElementById('strip-avatar');
-  const toggleBtn = document.getElementById('btn-toggle-lock');
-  if (!nameEl || !levelEl || !avatarEl) return;
+async function renderStatusStrip({ account, processes, clientRunning, gameRunning, persistedLocked }) {
+  const nameEl = byId('strip-account-name');
+  if (!nameEl) return;
 
-  let profile = null;
-  try {
-    profile = await window.api.client.getCurrentSummonerProfile();
-  } catch (err) {
-    console.warn('Could not read active account:', err);
-  }
+  nameEl.textContent = account ? account.name : 'Not logged in';
+  nameEl.title = account && !account.live ? 'The client is closed: showing the last account that logged in.' : '';
 
-  if (profile && profile.name) {
-    nameEl.textContent = profile.name;
-    nameEl.classList.remove('animate-pulse');
-    const lvl = profile.summonerLevel;
-    if (lvl && lvl > 0) {
-      levelEl.textContent = `LVL ${lvl}`;
-      levelEl.style.display = 'inline-block';
-    } else {
-      levelEl.style.display = 'none';
-    }
-    const iconId = profile.profileIconId || FALLBACK_PROFILE_ICON;
-    avatarEl.innerHTML = `<img src="https://ddragon.leagueoflegends.com/cdn/${ddragonVersion}/img/profileicon/${iconId}.png" alt="" onerror="this.style.display='none'" />`;
-  } else {
-    nameEl.textContent = 'Not Logged In';
-    nameEl.classList.remove('animate-pulse');
-    levelEl.style.display = 'none';
-    avatarEl.innerHTML = `
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00d4ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-      </svg>
-    `;
-  }
+  const levelEl = byId('strip-account-level');
+  levelEl.textContent = account?.summonerLevel ? `LVL ${account.summonerLevel}` : '';
+  levelEl.style.display = account?.summonerLevel ? 'inline-block' : 'none';
 
-  // Client status badge
-  try {
-    const isRunning = await window.api.status.isClientRunning();
-    const badge = document.getElementById('strip-client-badge');
-    if (badge) {
-      badge.className = isRunning ? 'status-badge status-badge--online' : 'status-badge status-badge--offline';
-      badge.textContent = isRunning ? 'Running' : 'Offline';
-    }
-    if (isRunning) {
-      const procs = await window.api.status.getRunningProcesses();
-      const detail = document.getElementById('strip-client-detail');
-      if (detail) detail.textContent = procs.length ? procs.join(', ') : '';
-    } else {
-      const detail = document.getElementById('strip-client-detail');
-      if (detail) detail.textContent = '';
-    }
-  } catch (err) {
-    console.warn('client status refresh failed:', err);
-  }
+  const clientBadge = byId('strip-client-badge');
+  clientBadge.className = `status-badge status-badge--${clientRunning || gameRunning ? 'online' : 'offline'}`;
+  clientBadge.textContent = gameRunning ? 'In Game' : clientRunning ? 'Running' : 'Offline';
+  byId('strip-client-detail').textContent = (processes ?? []).join(', ');
 
-  // Lock badge + toggle button visibility
-  try {
-    const paths = await window.api.paths.resolve();
-    if (paths && paths.persistedSettings) {
-      const isLocked = await window.api.lock.isReadOnly(paths.persistedSettings);
-      const lockBadge = document.getElementById('strip-lock-badge');
-      if (lockBadge) {
-        lockBadge.className = isLocked ? 'status-badge status-badge--locked' : 'status-badge status-badge--offline';
-        lockBadge.textContent = isLocked ? 'Locked (Read-only)' : 'Unlocked';
-      }
-      if (toggleBtn) toggleBtn.style.display = 'inline-flex';
-    } else if (toggleBtn) {
-      toggleBtn.style.display = 'none';
-    }
+  const lockBadge = byId('strip-lock-badge');
+  lockBadge.className = `status-badge status-badge--${persistedLocked ? 'locked' : 'offline'}`;
+  lockBadge.textContent = persistedLocked === null ? '—' : persistedLocked ? 'Locked (read-only)' : 'Unlocked';
+  byId('btn-toggle-lock').style.display = persistedLocked === null ? 'none' : 'inline-flex';
 
-    // Config files list
-    const listEl = document.getElementById('strip-config-files');
-    if (listEl && paths) {
-      listEl.innerHTML = `
-        <span style="color: ${paths.gameCfg ? 'var(--accent-emerald)' : 'var(--accent-rose)'}; font-weight: 500;">game.cfg</span>
-        <span style="color: var(--glass-border)">|</span>
-        <span style="color: ${paths.persistedSettings ? 'var(--accent-emerald)' : 'var(--accent-rose)'}; font-weight: 500;">PersistedSettings</span>
-        <span style="color: var(--glass-border)">|</span>
-        <span style="color: ${paths.clientSettings ? 'var(--accent-emerald)' : 'var(--accent-rose)'}; font-weight: 500;">ClientSettings</span>
-      `;
-    }
-  } catch (err) {
-    console.warn('lock/config files refresh failed:', err);
+  const avatar = byId('strip-avatar');
+  const iconUrl = account ? profileIconUrl(await latestVersion(), account.profileIconId) : '';
+  if (avatar.dataset.src !== iconUrl) {
+    avatar.dataset.src = iconUrl;
+    avatar.innerHTML = iconUrl ? `<img src="${escapeHtml(iconUrl)}" data-fallback="${FALLBACK_ICON_URL}" alt="" />` : LOGO_SVG;
+    attachImageFallbacks(avatar);
   }
 }
 
-// ─── active game settings summary ────────────────────────────────────────────
+async function refreshFileStatus() {
+  const list = byId('strip-config-files');
+  if (!list) return;
+  try {
+    const status = await api().paths.fileStatus();
+    const item = (ok, label) =>
+      `<span style="color: var(--accent-${ok ? 'emerald' : 'rose'}); font-weight: 500;" title="${ok ? 'Found' : 'Missing'}">${label}</span>`;
+    list.innerHTML = [
+      item(status.gameCfg, 'game.cfg'),
+      item(status.persistedSettings, 'PersistedSettings'),
+      item(status.clientSettings, 'ClientSettings'),
+    ].join('<span style="color: var(--glass-border)">|</span>');
+  } catch (err) {
+    list.innerHTML = `<span class="text-xs text-rose">${escapeHtml(errorMessage(err))}</span>`;
+  }
+}
 
 async function refreshActiveGameSettings() {
-  const setText = (id, value) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = value;
+  const set = (id, text) => {
+    const el = byId(id);
+    if (el) el.textContent = text;
   };
 
   try {
-    const { data: gameCfg } = await window.api.lol.readGameCfg();
-    const resolution = `${gameCfg?.General?.Width || '?'}x${gameCfg?.General?.Height || '?'}`;
-    setText('summary-resolution', resolution);
-
-    const fullscreen = String(gameCfg?.General?.Fullscreen || '0');
-    const modeMap = { '0': 'Windowed', '1': 'Fullscreen', '2': 'Borderless' };
-    setText('summary-windowmode', modeMap[fullscreen] || 'Unknown');
-
-    const volumePct = Math.round((Number(gameCfg?.General?.MasterVolume ?? 0)) * 100);
-    setText('summary-volume', `${volumePct}%`);
-
-    const { data: clientData } = await window.api.client.read();
-    const lang = clientData?.install?.globals?.locale || 'unknown';
-    setText('summary-language', lang);
-
-    const filesEl = document.getElementById('summary-files-status');
-    if (filesEl) {
-      const paths = await window.api.paths.resolve();
-      filesEl.innerHTML = `
-        <span style="color: ${paths.gameCfg ? 'var(--accent-emerald)' : 'var(--accent-rose)'};">game.cfg</span>
-        <span style="color: var(--glass-border)">|</span>
-        <span style="color: ${paths.persistedSettings ? 'var(--accent-emerald)' : 'var(--accent-rose)'};">PersistedSettings</span>
-        <span style="color: var(--glass-border)">|</span>
-        <span style="color: ${paths.clientSettings ? 'var(--accent-emerald)' : 'var(--accent-rose)'};">ClientSettings</span>
-      `;
-    }
-  } catch (err) {
-    console.warn('active settings refresh failed:', err);
+    const { data } = await api().lol.readGameCfg();
+    const general = data.General ?? {};
+    const volume = data.Volume ?? {};
+    set('summary-resolution', general.Width && general.Height ? `${general.Width}x${general.Height}` : '—');
+    set('summary-windowmode', WINDOW_MODES[general.WindowMode] ?? '—');
+    set(
+      'summary-volume',
+      volume.MasterVolume === undefined ? '—' : volume.MasterMute === '1' ? 'Muted' : `${Math.round(Number(volume.MasterVolume) * 100)}%`,
+    );
+  } catch {
+    ['summary-resolution', 'summary-windowmode', 'summary-volume'].forEach((id) => set(id, '—'));
   }
-}
 
-// ─── quick slots ─────────────────────────────────────────────────────────────
-
-async function refreshSlots() {
   try {
-    const profiles = await window.api.profiles.list();
-    for (const idx of [1, 2]) {
-      const slotName = `Slot_${idx}`;
-      const profile = profiles.find(p => p.name === slotName);
-      const statusEl = document.getElementById(`slot-${idx}-status`);
-      const applyBtn = document.getElementById(`btn-apply-slot-${idx}`);
-      if (!statusEl || !applyBtn) continue;
-
-      if (profile) {
-        const d = new Date(profile.createdAt);
-        statusEl.textContent = `Saved: ${!isNaN(d.getTime()) ? d.toLocaleString() : 'Yes'}`;
-        applyBtn.style.display = 'inline-flex';
-      } else {
-        statusEl.textContent = 'Empty';
-        applyBtn.style.display = 'none';
-      }
-    }
-  } catch (err) {
-    console.warn('slots refresh failed:', err);
+    const { data } = await api().client.read();
+    set('summary-language', data?.install?.globals?.locale ?? '—');
+  } catch {
+    set('summary-language', '—');
   }
 }
 
-// ─── custom profiles grid ────────────────────────────────────────────────────
+// ─── Profiles & slots ───────────────────────────────────────────────────────
 
-function getProfileAssets(profileName, meta, activeProfile, ddragonVersion) {
-  const nameLower = (profileName || '').toLowerCase().trim();
-  const activeNameLower = (activeProfile?.name || '').toLowerCase().trim();
-  const metaSummonerLower = (meta?.summonerName || '').toLowerCase().trim();
-
-  const isMatchingActive = activeProfile && activeProfile.name && (
-    nameLower === activeNameLower ||
-    (metaSummonerLower && metaSummonerLower === activeNameLower)
-  );
-
-  const isSynced = Boolean(meta?.profileIconId || (isMatchingActive && activeProfile?.profileIconId));
-
-  let iconId = meta?.profileIconId || (isMatchingActive ? activeProfile?.profileIconId : null);
-  let level = meta?.summonerLevel || (isMatchingActive ? activeProfile?.summonerLevel : null);
-
-  let iconUrl;
-  if (isSynced && iconId) {
-    iconUrl = `https://ddragon.leagueoflegends.com/cdn/${ddragonVersion || '14.10.1'}/img/profileicon/${iconId}.png`;
-  } else {
-    iconUrl = 'assets/lol-profile/profile_unranked.png';
-  }
-
-  let displayLevel = isSynced && level ? level : '—';
-  let splashUrl = isSynced ? (meta?.regalia?.bannerUrl || meta?.splashUrl || '') : '';
-
-  return { iconId, level: displayLevel, iconUrl, splashUrl, isSynced };
-}
-
-async function refreshProfilesGrid(ddragonVersion) {
-  const grid = document.getElementById('dashboard-profiles-grid');
+async function refreshProfiles() {
+  const grid = byId('dashboard-profiles-grid');
   if (!grid) return;
-  grid.innerHTML = '';
+  const account = window.appState?.account ?? null;
+  renderedAccount = account?.name ?? null;
 
-  let profiles = [];
+  let profiles;
   try {
-    const all = await window.api.profiles.list();
-    profiles = all.filter(p => p.name !== 'Slot_1' && p.name !== 'Slot_2');
+    profiles = await api().profiles.list();
   } catch (err) {
-    console.warn('Failed to list profiles:', err);
-  }
-
-  if (profiles.length === 0) {
-    grid.innerHTML = '<p class="text-sm text-muted" style="grid-column: 1 / -1;">No custom profiles saved yet.</p>';
+    grid.innerHTML = `<p class="text-sm text-rose" style="grid-column: 1 / -1;">Could not load profiles: ${escapeHtml(errorMessage(err))}</p>`;
     return;
   }
+  if (!mounted) return;
 
-  let activeProfile = null;
-  try {
-    activeProfile = await window.api.client.getCurrentSummonerProfile();
-  } catch (err) {
-    console.warn('Failed to fetch active summoner for card rendering:', err);
-  }
+  renderSlots(profiles);
+  await syncAccountMeta(profiles, account);
 
-  const mappings = JSON.parse(localStorage.getItem('account-profile-mappings') || '{}');
+  const version = await latestVersion();
+  const mappings = readJson(KEYS.accountMappings, {});
+  const custom = profiles.filter((p) => !isSlotProfile(p.name));
+  grid.innerHTML = custom.length
+    ? custom.map((profile) => profileCardHtml(profile, mappings, account, version)).join('')
+    : '<p class="text-sm text-muted" style="grid-column: 1 / -1;">No custom profiles yet. Use "Save Current" to create one.</p>';
+  attachImageFallbacks(grid);
+}
 
-  // Dynamic live sync: Auto-update saved profile metadata ONLY when profile name strictly equals active account name
-  if (activeProfile && activeProfile.name && activeProfile.profileIconId) {
-    for (const profile of profiles) {
-      const isSameName = profile.name.toLowerCase().trim() === activeProfile.name.toLowerCase().trim();
-      if (isSameName) {
-        const meta = profile.meta || {};
-        if (meta.profileIconId !== activeProfile.profileIconId || meta.summonerLevel !== activeProfile.summonerLevel) {
-          meta.profileIconId = activeProfile.profileIconId;
-          meta.summonerLevel = activeProfile.summonerLevel;
-          meta.summonerName = activeProfile.name;
-          profile.meta = meta;
-          try {
-            await window.api.profiles.updateProfile(profile.name, profile);
-          } catch (e) {
-            console.warn('Auto-sync profile meta save error:', e);
-          }
-        }
-      }
+/** Keeps icon and level of the logged-in account's own profile up to date. */
+async function syncAccountMeta(profiles, account) {
+  if (!account?.live) return;
+  for (const summary of profiles) {
+    const meta = summary.meta ?? {};
+    if (summary.name.toLowerCase() !== account.name.toLowerCase()) continue;
+    if (meta.profileIconId === account.profileIconId && meta.summonerLevel === account.summonerLevel) continue;
+    try {
+      const profile = await api().profiles.load(summary.name);
+      const updatedMeta = { ...profile.meta, summonerName: account.name, profileIconId: account.profileIconId, summonerLevel: account.summonerLevel };
+      await api().profiles.save({ ...profile, meta: updatedMeta });
+      summary.meta = updatedMeta;
+    } catch (err) {
+      console.warn(`Could not update account details of profile "${summary.name}":`, err);
     }
   }
-
-  for (const profile of profiles) {
-    const card = buildProfileCard(profile, mappings, ddragonVersion, activeProfile);
-    grid.appendChild(card);
-  }
-
-  bindProfileCardHandlers();
 }
 
-function buildProfileCard(profile, mappings, ddragonVersion, activeProfile) {
-  const card = document.createElement('div');
-  card.className = 'profile-card lol-profile-card';
-  card.dataset.profileName = profile.name;
+function renderSlots(profiles) {
+  SLOT_NAMES.forEach((slotName, i) => {
+    const status = byId(`slot-${i + 1}-status`);
+    const applyButton = document.querySelector(`[data-slot-apply="${i + 1}"]`);
+    if (!status || !applyButton) return;
+    const profile = profiles.find((p) => p.name === slotName);
+    status.textContent = profile ? `Saved ${formatDate(profile.createdAt)}` : 'Empty';
+    applyButton.style.display = profile ? 'inline-flex' : 'none';
+  });
+}
 
-  const meta = profile.meta || {};
-  const d = new Date(profile.createdAt);
-  const dateStr = !isNaN(d.getTime()) ? d.toLocaleString() : profile.createdAt;
+function profileCardHtml(profile, mappings, account, version) {
+  const meta = profile.meta ?? {};
+  const name = escapeHtml(profile.name);
+  const linkedAccount = Object.entries(mappings).find(([, profileName]) => profileName === profile.name)?.[0];
+  const subtitle = linkedAccount
+    ? `Linked to ${escapeHtml(linkedAccount)}`
+    : meta.summonerName && meta.summonerName !== profile.name
+      ? `Saved from ${escapeHtml(meta.summonerName)}`
+      : 'Custom profile';
 
-  const assets = getProfileAssets(profile.name, meta, activeProfile, ddragonVersion);
-  const iconUrl = assets.iconUrl;
-  const level = assets.level;
-  const frameUrl = assets.splashUrl;
-  const frameStyle = frameUrl
-    ? `background-image: linear-gradient(180deg, rgba(10,14,24,0.2) 0%, rgba(10,14,24,0.85) 100%), url('${frameUrl}');`
-    : `background: linear-gradient(180deg, rgba(15,23,42,0.6) 0%, rgba(10,14,24,0.95) 100%);`;
+  const linkControl = linkedAccount
+    ? `<span class="lol-profile-card__linked">Linked <button type="button" class="lol-profile-card__unlink" data-unlink="${name}" title="Unlink" aria-label="Unlink ${name}">×</button></span>`
+    : `<button class="btn btn--secondary btn--sm" data-link="${name}" ${account ? '' : 'disabled title="Log into the League client to link this profile to your account"'}>Link Active</button>`;
 
-  const activeSummonerName = activeProfile?.name || '';
-  const isLinked = Object.entries(mappings).some(([acc, prof]) => prof === profile.name && acc === activeSummonerName);
-  let boundAccount = null;
-  for (const [acc, prof] of Object.entries(mappings)) {
-    if (prof === profile.name) { boundAccount = acc; break; }
-  }
-
-  card.innerHTML = `
-    <div class="lol-profile-card__frame" style="${frameStyle}" aria-hidden="true"></div>
-    <div class="lol-profile-card__topline">
-      <span class="lol-profile-card__flag" title="Brasil">🇧🇷</span>
-      <span class="lol-profile-card__created">${dateStr}</span>
-    </div>
-    <div class="lol-profile-card__identity">
-      <div class="lol-profile-card__crest-wrapper">
-        <img class="lol-profile-card__moldura-img" src="assets/lol-profile/profile_emblem_hover.png" alt="" aria-hidden="true" />
-        <div class="lol-profile-card__avatar">
-          <img src="${iconUrl}" alt="" onerror="this.src='assets/lol-profile/profile_unranked.png'" />
-        </div>
-        <span class="lol-profile-card__level">${level}</span>
+  return `
+    <div class="profile-card lol-profile-card">
+      <div class="lol-profile-card__frame" style="background: linear-gradient(180deg, rgba(15,23,42,0.6) 0%, rgba(10,14,24,0.95) 100%);" aria-hidden="true"></div>
+      <div class="lol-profile-card__topline">
+        <span class="lol-profile-card__created">${escapeHtml(formatDate(profile.createdAt))}</span>
       </div>
-      <h4 class="lol-profile-card__name">${profile.name}</h4>
-      <p class="lol-profile-card__meta">Custom profile${boundAccount ? ` · Linked to ${boundAccount}` : ''}</p>
-    </div>
-    <div class="lol-profile-card__actions">
-      ${boundAccount
-        ? `<span class="lol-profile-card__linked">Linked <span class="btn-unlink-dash-profile" data-name="${profile.name}">×</span></span>`
-        : `<button class="btn btn--secondary btn--sm btn-link-dash-profile" data-name="${profile.name}">Link Active</button>`}
-      <button class="btn btn--primary btn--sm btn-apply-dash-profile" data-name="${profile.name}">Apply</button>
-    </div>
-  `;
-  return card;
+      <div class="lol-profile-card__identity">
+        <div class="lol-profile-card__crest-wrapper">
+          <img class="lol-profile-card__moldura-img" src="assets/lol-profile/profile_emblem_hover.png" alt="" aria-hidden="true" />
+          <div class="lol-profile-card__avatar">
+            <img src="${escapeHtml(profileIconUrl(version, meta.profileIconId))}" data-fallback="${FALLBACK_ICON_URL}" alt="" />
+          </div>
+          <span class="lol-profile-card__level">${escapeHtml(meta.summonerLevel ?? '—')}</span>
+        </div>
+        <h4 class="lol-profile-card__name">${name}</h4>
+        <p class="lol-profile-card__meta">${subtitle}</p>
+      </div>
+      <div class="lol-profile-card__actions">
+        ${linkControl}
+        <button class="btn btn--primary btn--sm" data-apply="${name}">Apply</button>
+      </div>
+    </div>`;
 }
 
-function bindProfileCardHandlers() {
-  const grid = document.getElementById('dashboard-profiles-grid');
-  if (!grid) return;
+async function applyProfileByName(name, button) {
+  await withBusyButtons([button], 'Applying…', async () => {
+    try {
+      await api().profiles.applyAll(await api().profiles.load(name));
+      toast(`"${name}" applied`, 'success');
+      await Promise.allSettled([refreshActiveGameSettings(), refreshHistory()]);
+    } catch (err) {
+      toast(errorMessage(err), 'error');
+    }
+  });
+}
 
-  grid.querySelectorAll('.btn-link-dash-profile').forEach(btn => {
-    btn.addEventListener('click', async e => {
-      const profileName = e.target.getAttribute('data-name');
-      const activeNameEl = document.getElementById('strip-account-name');
-      const activeName = activeNameEl ? activeNameEl.textContent : '';
-      if (!activeName || activeName === 'Detecting…' || activeName === 'Not Logged In') {
-        if (window.showToast) window.showToast('Please log into League of Legends client first!', 'error');
+// ─── History ────────────────────────────────────────────────────────────────
+
+function refreshHistory() {
+  const container = byId('change-history-timeline');
+  if (!container) return;
+  const history = api().history.list();
+  if (!history.length) {
+    container.innerHTML = '<p class="text-sm text-muted" style="margin: 0;">No backups yet.</p>';
+    return;
+  }
+  container.innerHTML = history
+    .map(
+      (entry) => `
+      <div style="background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); border-radius: var(--radius-md); padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; gap: 12px;">
+        <div style="display: flex; flex-direction: column; min-width: 0;">
+          <span style="font-weight: 600; color: var(--accent-cyan);">${escapeHtml(entry.description)}</span>
+          <span style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">${escapeHtml(formatDate(entry.timestamp))}</span>
+        </div>
+        <button class="btn btn--secondary btn--sm" data-rollback="${escapeHtml(entry.timestamp)}" style="padding: 4px 8px; font-size: 11px;">Restore</button>
+      </div>`,
+    )
+    .join('');
+}
+
+// ─── Actions ────────────────────────────────────────────────────────────────
+
+async function optimizeFps(button) {
+  const confirmed = await confirmAction({
+    title: 'Optimize for FPS',
+    message:
+      'Turn off shadows, anti-aliasing and HUD animations, and set effects, environment and character quality to their lowest levels?\n\nA backup is saved first, so you can restore it from the Backup Timeline.',
+    confirmText: 'Optimize',
+  });
+  if (!confirmed) return;
+
+  await withBusyButtons([button], 'Optimizing…', async () => {
+    try {
+      await api().status.assertGameClosed();
+      const ini = (await api().lol.readGameCfg()).data;
+      const persisted = await api().lol.readKeybindings().then((r) => r.data, () => null);
+
+      let changed = 0;
+      for (const [section, values] of Object.entries(FPS_SETTINGS)) {
+        for (const [key, value] of Object.entries(values)) {
+          if (ini[section]?.[key] === undefined) continue;
+          applyValue(ini, persisted ?? {}, iniKey(section, key), value);
+          changed++;
+        }
+      }
+      if (!changed) {
+        toast('game.cfg has none of the graphics settings yet. Open the in-game options once, then try again.', 'info');
         return;
       }
-      const current = JSON.parse(localStorage.getItem('account-profile-mappings') || '{}');
-      current[activeName] = profileName;
-      localStorage.setItem('account-profile-mappings', JSON.stringify(current));
-      if (window.showToast) window.showToast(`Linked account "${activeName}" to profile "${profileName}"!`, 'success');
-      refreshAll(DD_CDN_FALLBACK);
-    });
-  });
 
-  grid.querySelectorAll('.btn-unlink-dash-profile').forEach(btn => {
-    btn.addEventListener('click', e => {
-      const profileName = e.target.getAttribute('data-name');
-      const current = JSON.parse(localStorage.getItem('account-profile-mappings') || '{}');
-      for (const [acc, prof] of Object.entries(current)) {
-        if (prof === profileName) delete current[acc];
-      }
-      localStorage.setItem('account-profile-mappings', JSON.stringify(current));
-      if (window.showToast) window.showToast('Profile unlinked successfully', 'info');
-      refreshAll(DD_CDN_FALLBACK);
-    });
-  });
-
-  grid.querySelectorAll('.btn-apply-dash-profile').forEach(btn => {
-    btn.addEventListener('click', async e => {
-      const name = e.target.getAttribute('data-name');
-      try {
-        const profileObj = await window.api.profiles.load(name);
-        await window.api.profiles.applyAll(profileObj, { force: true });
-        if (window.showToast) window.showToast(`Profile "${name}" applied instantly!`, 'success');
-      } catch (err) {
-        if (window.showToast) window.showToast(err.message, 'error');
-      }
-    });
+      await api().history.saveSnapshot('Before FPS optimization');
+      await api().lol.updateSettings(ini);
+      if (persisted?.files) await api().lol.updateKeybindings(persisted);
+      toast(`Optimized ${changed} graphics settings for FPS`, 'success');
+      await Promise.allSettled([refreshActiveGameSettings(), refreshHistory()]);
+    } catch (err) {
+      toast(`Optimization failed: ${errorMessage(err)}`, 'error');
+    }
   });
 }
 
-// ─── change history timeline ─────────────────────────────────────────────────
-
-function refreshChangeHistory() {
+async function unlockAllFiles() {
   try {
-    const historyList = window.api.history.list();
-    const container = document.getElementById('change-history-timeline');
-    if (!container) return;
-    container.innerHTML = '';
-    if (historyList.length === 0) {
-      container.innerHTML = '<p class="text-sm text-muted" style="margin: 0;">No history states saved yet. States are saved automatically before making changes.</p>';
+    const paths = await api().paths.resolve();
+    const status = await api().paths.fileStatus();
+    for (const kind of ['gameCfg', 'persistedSettings', 'clientSettings']) {
+      if (status[kind]) await api().lock.removeReadOnly(paths[kind]);
+    }
+    toast('All config files are writable again', 'success');
+    await window.refreshStatus();
+  } catch (err) {
+    toast(`Could not unlock files: ${errorMessage(err)}`, 'error');
+  }
+}
+
+async function saveCurrentAs(name) {
+  const exists = (await api().profiles.list()).some((p) => p.name.toLowerCase() === name.toLowerCase());
+  if (exists) {
+    const overwrite = await confirmAction({
+      title: 'Overwrite profile?',
+      message: `A profile named "${name}" already exists. Replace it with the current settings?`,
+      confirmText: 'Overwrite',
+      danger: true,
+    });
+    if (!overwrite) return;
+  }
+  try {
+    await api().profiles.quickSave(name);
+    toast(`Profile "${name}" saved`, 'success');
+    await refreshProfiles();
+  } catch (err) {
+    toast(errorMessage(err), 'error');
+  }
+}
+
+function openSaveModal() {
+  const modal = window.openModal({
+    title: 'Save current settings',
+    body: `
+      <div class="form-group" style="margin-bottom: 0;">
+        <label for="save-profile-name">Profile name</label>
+        <input type="text" id="save-profile-name" class="input-control w-full" maxlength="100" placeholder="e.g. Ranked settings" style="max-width: 100%;" value="${escapeHtml(window.appState?.account?.name ?? '')}" />
+      </div>`,
+    footer: `
+      <button class="btn btn--secondary" data-action="cancel">Cancel</button>
+      <button class="btn btn--primary" data-action="save">Save</button>`,
+  });
+
+  const input = modal.body.querySelector('input');
+  input.focus();
+  input.select();
+
+  const submit = () => {
+    const name = input.value.trim();
+    if (!name) {
+      toast('Profile name cannot be empty', 'error');
+      input.focus();
       return;
     }
-    for (const h of historyList) {
-      const d = new Date(h.timestamp);
-      const dateStr = !isNaN(d.getTime()) ? `${d.toLocaleTimeString()} ${d.toLocaleDateString()}` : h.timestamp;
-      const row = document.createElement('div');
-      row.style.cssText = 'background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); border-radius: var(--radius-md); padding: 10px 16px; display: flex; justify-content: space-between; align-items: center; font-size: 12px;';
-      row.innerHTML = `
-        <div style="display: flex; flex-direction: column;">
-          <span style="font-weight: 600; color: var(--accent-cyan);">${h.description}</span>
-          <span style="font-size: 10px; color: var(--text-muted); margin-top: 2px;">${dateStr}</span>
-        </div>
-        <button class="btn btn--secondary btn--sm btn-rollback-history" data-timestamp="${h.timestamp}" style="padding: 4px 8px; font-size: 11px;">Rollback</button>
-      `;
-      container.appendChild(row);
+    modal.close();
+    saveCurrentAs(name);
+  };
+  input.addEventListener('keydown', (e) => e.key === 'Enter' && submit(), { signal: modal.signal });
+  modal.footer.addEventListener('click', (e) => {
+    const action = e.target.closest('[data-action]')?.dataset.action;
+    if (action === 'save') submit();
+    if (action === 'cancel') modal.close();
+  }, { signal: modal.signal });
+}
+
+function bindHandlers() {
+  const root = byId('dashboard-view');
+  if (!root) return;
+
+  root.addEventListener('click', async (event) => {
+    const target = event.target.closest('button');
+    if (!target || target.disabled) return;
+    const { link, unlink, apply, rollback, slotSave, slotApply } = target.dataset;
+
+    if (link !== undefined) {
+      const account = window.appState?.account;
+      if (!account) return toast('Log into the League client first', 'error');
+      const mappings = readJson(KEYS.accountMappings, {});
+      mappings[account.name] = link;
+      writeJson(KEYS.accountMappings, mappings);
+      // The profile is applied on this account's next login, not right away.
+      writeText(KEYS.lastAutoApplied, `${account.name}:${link}`);
+      toast(`"${link}" will be applied whenever ${account.name} logs in`, 'success');
+      return refreshProfiles();
     }
-    container.querySelectorAll('.btn-rollback-history').forEach(btn => {
-      btn.addEventListener('click', async e => {
-        const ts = e.target.getAttribute('data-timestamp');
-        if (!confirm('Are you sure you want to rollback your settings to this state?')) return;
+
+    if (unlink !== undefined) {
+      const mappings = Object.fromEntries(Object.entries(readJson(KEYS.accountMappings, {})).filter(([, name]) => name !== unlink));
+      writeJson(KEYS.accountMappings, mappings);
+      toast(`"${unlink}" is no longer linked to an account`, 'info');
+      return refreshProfiles();
+    }
+
+    if (apply !== undefined) return applyProfileByName(apply, target);
+
+    if (slotSave !== undefined) {
+      return withBusyButtons([target], 'Saving…', async () => {
         try {
-          await window.api.history.rollback(ts);
-          if (window.showToast) window.showToast('Rollback successful!', 'success');
-          refreshAll(DD_CDN_FALLBACK);
+          await api().profiles.quickSave(`Slot_${slotSave}`);
+          toast(`Current settings saved to Slot ${slotSave}`, 'success');
+          await refreshProfiles();
         } catch (err) {
-          if (window.showToast) window.showToast(err.message, 'error');
+          toast(errorMessage(err), 'error');
         }
       });
-    });
-  } catch (err) {
-    console.warn('history refresh failed:', err);
-  }
-}
-
-// ─── auto profile switcher / auto backup ─────────────────────────────────────
-
-async function runAutoProfileLogic() {
-  const nameEl = document.getElementById('strip-account-name');
-  const activeSummoner = nameEl ? nameEl.textContent : '';
-  if (!activeSummoner || activeSummoner === 'Detecting…' || activeSummoner === 'Not Logged In') return;
-
-  const switcherEnabled = localStorage.getItem('app-settings-auto-switcher') !== 'false';
-  if (switcherEnabled) {
-    const mappings = JSON.parse(localStorage.getItem('account-profile-mappings') || '{}');
-    const boundProfileName = mappings[activeSummoner];
-    if (boundProfileName) {
-      const lastAutoApplied = localStorage.getItem('last-auto-applied-combination');
-      const combinationKey = `${activeSummoner}:${boundProfileName}`;
-      if (lastAutoApplied !== combinationKey) {
-        const profileObj = await window.api.profiles.load(boundProfileName);
-        await window.api.profiles.applyAll(profileObj);
-        localStorage.setItem('last-auto-applied-combination', combinationKey);
-        if (window.showToast) {
-          window.showToast(`Auto Switcher: Applied "${boundProfileName}" for account "${activeSummoner}"!`, 'success');
-        }
-      }
     }
-  }
 
-  // Auto backup: if no profile for this summoner exists, create one.
-  const profiles = await window.api.profiles.list();
-  const matches = profiles.filter(p => {
-    const nameMatches = p.name.toLowerCase() === activeSummoner.toLowerCase() ||
-                        p.name.toLowerCase().startsWith(activeSummoner.toLowerCase() + '_');
-    const metaMatches = p.meta && p.meta.summonerName && p.meta.summonerName.toLowerCase() === activeSummoner.toLowerCase();
-    return nameMatches || metaMatches;
-  });
+    if (slotApply !== undefined) return applyProfileByName(`Slot_${slotApply}`, target);
 
-  if (matches.length === 0) {
-    const key = `autosaved-summoner-${activeSummoner}`;
-    if (!localStorage.getItem(key)) {
-      await window.api.profiles.quickSave(activeSummoner);
-      localStorage.setItem(key, 'true');
-      if (window.showToast) {
-        window.showToast(`Nova conta detectada! Perfil salvo automaticamente como "${activeSummoner}"!`, 'success');
-      }
-    }
-  } else {
-    // Existing account: if newest snapshot is older than 30 days, create a dated backup.
-    let latest = new Date(0);
-    for (const p of matches) {
-      const dt = new Date(p.createdAt);
-      if (dt > latest) latest = dt;
-    }
-    const diffDays = (Date.now() - latest.getTime()) / (1000 * 60 * 60 * 24);
-    if (diffDays > 30) {
-      const today = new Date().toISOString().split('T')[0];
-      const backupName = `${activeSummoner}_${today}`;
-      await window.api.profiles.quickSave(backupName);
-      if (window.showToast) {
-        window.showToast(`Backup periódico (+30 dias): Nova versão salva como "${backupName}"!`, 'success');
-      }
-    }
-  }
-}
-
-// ─── static event handlers ───────────────────────────────────────────────────
-
-function bindStaticHandlers() {
-  // Quick save slots
-  for (const idx of [1, 2]) {
-    document.getElementById(`btn-save-slot-${idx}`)?.addEventListener('click', async () => {
+    if (rollback !== undefined) {
+      const confirmed = await confirmAction({
+        title: 'Restore backup',
+        message: 'Restore your settings to this backup? The current settings are backed up first.',
+        confirmText: 'Restore',
+      });
+      if (!confirmed) return;
       try {
-        await window.api.profiles.quickSave(`Slot_${idx}`);
-        if (window.showToast) window.showToast(`Settings saved to Slot ${idx}!`, 'success');
-        refreshAll(DD_CDN_FALLBACK);
+        await api().history.rollback(rollback);
+        toast('Backup restored', 'success');
+        await Promise.allSettled([refreshActiveGameSettings(), refreshHistory()]);
       } catch (err) {
-        if (window.showToast) window.showToast(err.message, 'error');
+        toast(errorMessage(err), 'error');
       }
-    });
-    document.getElementById(`btn-apply-slot-${idx}`)?.addEventListener('click', async () => {
-      try {
-        const profile = await window.api.profiles.load(`Slot_${idx}`);
-        await window.api.profiles.applyAll(profile, { force: true });
-        if (window.showToast) window.showToast(`Slot ${idx} settings applied instantly!`, 'success');
-      } catch (err) {
-        if (window.showToast) window.showToast(err.message, 'error');
-      }
-    });
-  }
-
-  document.getElementById('btn-refresh-profiles')?.addEventListener('click', () => {
-    refreshAll(DD_CDN_FALLBACK);
-  });
-
-  document.getElementById('btn-optimize-fps')?.addEventListener('click', async () => {
-    try {
-      if (!confirm('Optimize game settings for maximum FPS and minimal latency? This will disable shadows, decrease effect quality, and cap framerate.')) return;
-      await window.api.history.saveSnapshot('Before FPS Optimization');
-      const patch = {
-        General: { AntiAliasing: '0', ShadowsEnabled: '0', EffectsQuality: '0', EnvironmentQuality: '0', CharacterQuality: '1', PredictMovement: '1' },
-        Performance: { ShadowsEnabled: '0', EffectsQuality: '0', EnvironmentQuality: '0', CharacterQuality: '1' }
-      };
-      await window.api.lol.updateSettings(patch);
-      if (window.showToast) window.showToast('Game configurations optimized for maximum FPS!', 'success');
-      refreshActiveGameSettings();
-    } catch (err) {
-      if (window.showToast) window.showToast(`Optimization failed: ${err.message}`, 'error');
     }
   });
 
-  document.getElementById('btn-refresh-status')?.addEventListener('click', () => {
-    refreshAll(DD_CDN_FALLBACK);
-    if (window.showToast) window.showToast('Status refreshed', 'success');
+  byId('btn-quick-save').addEventListener('click', openSaveModal);
+  byId('btn-refresh-profiles').addEventListener('click', refreshProfiles);
+  byId('btn-toggle-lock').addEventListener('click', () => window.toggleCloudSyncLock());
+  byId('btn-optimize-fps').addEventListener('click', (e) => optimizeFps(e.currentTarget));
+  byId('btn-unlock-all').addEventListener('click', unlockAllFiles);
+  byId('btn-refresh-status').addEventListener('click', async () => {
+    await Promise.allSettled([window.refreshStatus(), refreshFileStatus(), refreshActiveGameSettings(), refreshProfiles()]);
+    refreshHistory();
+    toast('Status refreshed', 'success');
   });
-
-  document.getElementById('btn-toggle-lock')?.addEventListener('click', async () => {
-    try {
-      const paths = await window.api.paths.resolve();
-      if (!paths || !paths.persistedSettings) throw new Error('PersistedSettings not found');
-      const isLocked = await window.api.lock.isReadOnly(paths.persistedSettings);
-      if (isLocked) {
-        await window.api.lock.removeReadOnly(paths.persistedSettings);
-        if (window.showToast) window.showToast('File unlocked', 'success');
-      } else {
-        await window.api.lock.setReadOnly(paths.persistedSettings);
-        if (window.showToast) window.showToast('File locked', 'success');
-      }
-      refreshStatusStrip(DD_CDN_FALLBACK);
-    } catch (err) {
-      if (window.showToast) window.showToast(err.message, 'error');
-    }
-  });
-
-  document.getElementById('btn-unlock-all')?.addEventListener('click', async () => {
-    try {
-      const paths = await window.api.paths.resolve();
-      if (paths?.persistedSettings) await window.api.lock.removeReadOnly(paths.persistedSettings);
-      if (paths?.gameCfg) await window.api.lock.removeReadOnly(paths.gameCfg);
-      if (paths?.clientSettings) await window.api.lock.removeReadOnly(paths.clientSettings);
-      if (window.showToast) window.showToast('All files unlocked', 'success');
-      refreshStatusStrip(DD_CDN_FALLBACK);
-    } catch (err) {
-      if (window.showToast) window.showToast(err.message, 'error');
-    }
-  });
-
-  document.getElementById('btn-quick-save')?.addEventListener('click', openSaveModal);
-}
-
-// ─── save modal ──────────────────────────────────────────────────────────────
-
-async function openSaveModal() {
-  let suggested = '';
-  try {
-    suggested = (await window.api.client.getCurrentSummonerName()) || '';
-  } catch { /* fall back to empty */ }
-
-  const overlay = document.getElementById('modal-overlay');
-  const header = document.getElementById('modal-header');
-  const body = document.getElementById('modal-body');
-  const footer = document.getElementById('modal-footer');
-  if (!overlay || !header || !body || !footer) return;
-
-  header.innerHTML = '<h3>Save Current Profile</h3>';
-  body.innerHTML = `
-    <div class="form-group" style="margin-bottom: 0;">
-      <label>Profile Name</label>
-      <input type="text" id="prompt-profile-name" class="input-control w-full" placeholder="e.g. Pro Settings" style="max-width: 100%;" value="${suggested}" />
-    </div>
-  `;
-  footer.innerHTML = `
-    <button class="btn btn--secondary" id="prompt-cancel">Cancel</button>
-    <button class="btn btn--primary" id="prompt-confirm">Save</button>
-  `;
-
-  overlay.style.display = 'flex';
-  requestAnimationFrame(() => overlay.classList.add('modal-overlay--visible'));
-
-  const close = () => {
-    overlay.classList.remove('modal-overlay--visible');
-    setTimeout(() => { overlay.style.display = 'none'; }, 200);
-  };
-
-  document.getElementById('prompt-cancel').onclick = close;
-  document.getElementById('prompt-confirm').onclick = async () => {
-    const name = document.getElementById('prompt-profile-name').value.trim();
-    close();
-    if (!name) {
-      if (window.showToast) window.showToast('Profile name cannot be empty', 'error');
-      return;
-    }
-    try {
-      await window.api.profiles.quickSave(name);
-      if (window.showToast) window.showToast('Profile saved successfully', 'success');
-      refreshAll(DD_CDN_FALLBACK);
-    } catch (err) {
-      if (window.showToast) window.showToast(err.message, 'error');
-    }
-  };
 }
