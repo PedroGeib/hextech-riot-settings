@@ -47,7 +47,7 @@ function profileRowHtml(profile) {
   const meta = profile.meta ?? {};
   const name = escapeHtml(profile.name);
   const details = [
-    `Created ${formatDate(profile.createdAt)}`,
+    profile.updatedAt ? `Updated ${formatDate(profile.updatedAt)}` : `Created ${formatDate(profile.createdAt)}`,
     meta.summonerLevel ? `LVL ${meta.summonerLevel}` : null,
     meta.summonerName && meta.summonerName !== profile.name ? `from ${meta.summonerName}` : null,
   ]

@@ -326,7 +326,7 @@ function renderSlots(profiles) {
     const applyButton = document.querySelector(`[data-slot-apply="${i + 1}"]`);
     if (!status || !applyButton) return;
     const profile = profiles.find((p) => p.name === slotName);
-    status.textContent = profile ? `Saved ${formatDate(profile.createdAt)}` : 'Empty';
+    status.textContent = profile ? `Saved ${formatDate(profile.updatedAt ?? profile.createdAt)}` : 'Empty';
     applyButton.style.display = profile ? 'inline-flex' : 'none';
   });
 }
@@ -350,7 +350,7 @@ function profileCardHtml(profile, mappings, account) {
       <div class="lol-profile-card__banner" style="background-image: url('${escapeHtml(bannerImageUrl(meta.regalia))}');" aria-hidden="true"></div>
       <div class="lol-profile-card__frame" aria-hidden="true"></div>
       <div class="lol-profile-card__topline">
-        <span class="lol-profile-card__created">${escapeHtml(formatDate(profile.createdAt))}</span>
+        <span class="lol-profile-card__created">${escapeHtml(formatDate(profile.updatedAt ?? profile.createdAt))}</span>
       </div>
       <div class="lol-profile-card__identity">
         <div class="lol-profile-card__crest-wrapper">

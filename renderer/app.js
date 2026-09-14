@@ -311,11 +311,14 @@ async function ensureAccountBackup(account) {
     return;
   }
 
-  const newest = Math.max(...matches.map((p) => Date.parse(p.createdAt) || 0));
-  if (Date.now() - newest > BACKUP_MAX_AGE_MS) {
-    const backupName = `${account.name}_${new Date().toISOString().slice(0, 10)}`;
-    await api.profiles.quickSave(backupName);
-    showToast(`Monthly backup saved as "${backupName}"`, 'success');
+  // Refreshes the account's existing profile instead of creating dated copies.
+  const lastSaved = (p) => Date.parse(p.updatedAt ?? p.createdAt) || 0;
+  const target =
+    matches.find((p) => p.name.toLowerCase() === name) ??
+    matches.reduce((newest, p) => (lastSaved(p) > lastSaved(newest) ? p : newest));
+  if (Date.now() - lastSaved(target) > BACKUP_MAX_AGE_MS) {
+    await api.profiles.quickSave(target.name);
+    showToast(`Profile "${target.name}" updated with the current settings`, 'success');
   }
 }
 

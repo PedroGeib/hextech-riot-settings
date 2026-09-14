@@ -341,10 +341,12 @@ async function quickSaveProfile(name) {
   }
 
   const [account, existing] = await Promise.all([getCurrentAccount(), readProfiles().then((p) => findProfile(p, trimmed))]);
+  const now = new Date().toISOString();
   return saveProfile({
     name: trimmed,
     version: 2,
-    createdAt: new Date().toISOString(),
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
     meta: {
       summonerName: account?.name ?? null,
       profileIconId: account?.profileIconId ?? null,
@@ -449,7 +451,13 @@ window.api = {
 
   profiles: {
     list: async () =>
-      (await readProfiles()).map(({ name, fileName, createdAt, meta }) => ({ name, fileName, createdAt, meta: meta ?? null })),
+      (await readProfiles()).map(({ name, fileName, createdAt, updatedAt, meta }) => ({
+        name,
+        fileName,
+        createdAt,
+        updatedAt: updatedAt ?? null,
+        meta: meta ?? null,
+      })),
     load: loadProfile,
     save: saveProfile,
     quickSave: quickSaveProfile,
