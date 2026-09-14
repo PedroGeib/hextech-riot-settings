@@ -11,7 +11,6 @@ use serde::Serialize;
 
 use crate::files::read_shared;
 
-const DEFAULT_ICON_ID: i64 = 29;
 const DISPLAY_NAME_MARKER: &str = "Player display name update received:";
 const MAX_LOGS_SCANNED: usize = 10;
 
@@ -20,8 +19,10 @@ const MAX_LOGS_SCANNED: usize = 10;
 pub struct SummonerProfile {
   pub name: String,
   pub tag_line: Option<String>,
-  pub profile_icon_id: i64,
-  pub summoner_level: i64,
+  /// Only known when read from the running client.
+  pub profile_icon_id: Option<i64>,
+  /// Only known when read from the running client.
+  pub summoner_level: Option<i64>,
   /// True when read from the running client; false when recovered from logs.
   pub live: bool,
 }
@@ -41,44 +42,39 @@ pub fn from_client(value: &serde_json::Value) -> Option<SummonerProfile> {
   Some(SummonerProfile {
     name: text("gameName").or_else(|| text("displayName"))?,
     tag_line: text("tagLine"),
-    profile_icon_id: number("profileIconId").unwrap_or(DEFAULT_ICON_ID),
-    summoner_level: number("summonerLevel").unwrap_or(1),
+    profile_icon_id: number("profileIconId"),
+    summoner_level: number("summonerLevel"),
     live: true,
   })
 }
 
-/// Scans a client log from the end for the most recent account details.
+/// Finds the most recent account name in a client log. Icon and level are not
+/// read from logs, because they also contain other players' data.
 pub fn parse_log(content: &str) -> Option<SummonerProfile> {
-  let mut name: Option<String> = None;
-  let mut icon: Option<i64> = None;
-  let mut level: Option<i64> = None;
+  let from_marker = |line: &str| {
+    let idx = line.find(DISPLAY_NAME_MARKER)?;
+    let rest = line[idx + DISPLAY_NAME_MARKER.len()..].trim();
+    Some(rest.split('#').next().unwrap_or_default().trim().to_string())
+  };
+  let from_json = |line: &str| {
+    ["gameName", "displayName", "summonerName"]
+      .iter()
+      .find_map(|field| json_field(line, field))
+  };
 
-  for line in content.lines().rev() {
-    if name.is_none() {
-      name = match line.find(DISPLAY_NAME_MARKER) {
-        Some(idx) => {
-          let rest = line[idx + DISPLAY_NAME_MARKER.len()..].trim();
-          Some(rest.split('#').next().unwrap_or_default().trim().to_string())
-        }
-        None => ["gameName", "displayName", "summonerName"]
-          .iter()
-          .find_map(|field| json_field(line, field)),
-      }
-      .filter(|n| !n.is_empty());
-    }
-    icon = icon.or_else(|| json_field(line, "profileIconId").and_then(|v| v.parse().ok()));
-    level = level.or_else(|| json_field(line, "summonerLevel").and_then(|v| v.parse().ok()));
+  // The display-name marker is specific to the local player, so it wins over
+  // generic JSON fields anywhere in the log.
+  let name = content
+    .lines()
+    .rev()
+    .find_map(|line| from_marker(line).filter(|n| !n.is_empty()))
+    .or_else(|| content.lines().rev().find_map(|line| from_json(line).filter(|n| !n.is_empty())))?;
 
-    if name.is_some() && icon.is_some() && level.is_some() {
-      break;
-    }
-  }
-
-  name.map(|name| SummonerProfile {
+  Some(SummonerProfile {
     name,
     tag_line: None,
-    profile_icon_id: icon.unwrap_or(DEFAULT_ICON_ID),
-    summoner_level: level.unwrap_or(1),
+    profile_icon_id: None,
+    summoner_level: None,
     live: false,
   })
 }
@@ -156,7 +152,7 @@ mod tests {
     let profile = from_client(&value).unwrap();
     assert_eq!(profile.name, "AuSol do Prata");
     assert_eq!(profile.tag_line.as_deref(), Some("BR1"));
-    assert_eq!((profile.profile_icon_id, profile.summoner_level, profile.live), (1116, 48, true));
+    assert_eq!((profile.profile_icon_id, profile.summoner_level, profile.live), (Some(1116), Some(48), true));
   }
 
   #[test]
@@ -165,17 +161,23 @@ mod tests {
   }
 
   #[test]
-  fn parses_most_recent_account_from_log() {
+  fn takes_only_the_most_recent_name_from_logs() {
     let log = [
       r#"000001 Player display name update received: OldName#BR1"#,
-      r#"000002 {"profileIconId": 29, "summonerLevel": 10}"#,
+      r#"000002 {"gameName": "SomeoneElse", "summonerLevel": 1}"#,
       r#"000003 Player display name update received: NewName#BR1"#,
-      r#"000004 {"profileIconId": 6923, "summonerLevel": 682}"#,
+      r#"000004 {"gameName": "Teammate", "profileIconId": 29, "summonerLevel": 1}"#,
     ]
     .join("\n");
     let profile = parse_log(&log).unwrap();
     assert_eq!(profile.name, "NewName");
-    assert_eq!((profile.profile_icon_id, profile.summoner_level, profile.live), (6923, 682, false));
+    assert_eq!((profile.profile_icon_id, profile.summoner_level, profile.live), (None, None, false));
+  }
+
+  #[test]
+  fn falls_back_to_json_names_without_the_marker() {
+    let profile = parse_log(r#"{"gameName": "OnlyName"}"#).unwrap();
+    assert_eq!(profile.name, "OnlyName");
   }
 
   #[test]

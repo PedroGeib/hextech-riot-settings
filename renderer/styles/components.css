@@ -87,9 +87,12 @@
   color: var(--text-secondary);
   background: transparent;
   border: 0;
+  outline: none;
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
 }
+
+.titlebar__btn:focus-visible { box-shadow: inset var(--focus-ring); }
 
 .titlebar__btn:hover {
   color: var(--text-primary);
