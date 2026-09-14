@@ -1,7 +1,8 @@
 // Profiles page: save, apply, edit and delete configuration snapshots.
 
-import { FALLBACK_ICON_URL, attachImageFallbacks, latestVersion, profileIconUrl } from '../lib/ddragon.js';
 import { escapeHtml } from '../lib/html.js';
+import { attachImageFallbacks } from '../lib/regalia.js';
+import { crestHtml } from './shared/regalia-crest.js';
 import { KEYS, readJson, writeJson } from '../lib/storage.js';
 import { confirmAction, errorMessage, toast, withBusyButtons } from '../lib/ui.js';
 
@@ -42,7 +43,7 @@ export function render() {
     </div>`;
 }
 
-function profileRowHtml(profile, version) {
+function profileRowHtml(profile) {
   const meta = profile.meta ?? {};
   const name = escapeHtml(profile.name);
   const details = [
@@ -57,13 +58,8 @@ function profileRowHtml(profile, version) {
   return `
     <div class="profile-card" style="border: 1px solid var(--glass-border); padding: 1rem; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; gap: 12px;">
       <div style="display: flex; align-items: center; gap: 12px; min-width: 0;">
-        <div style="position: relative; width: 42px; height: 42px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-          <svg style="position: absolute; inset: 0; width: 100%; height: 100%;" viewBox="0 0 100 100" aria-hidden="true">
-            <circle cx="50" cy="50" r="46" fill="none" stroke="#c89b3c" stroke-width="4.5" />
-          </svg>
-          <div style="width: 32px; height: 32px; border-radius: 50%; overflow: hidden; background: #0a1428; border: 1.5px solid #000;">
-            <img src="${escapeHtml(profileIconUrl(version, meta.profileIconId))}" data-fallback="${FALLBACK_ICON_URL}" alt="" style="width: 100%; height: 100%; object-fit: cover;" />
-          </div>
+        <div class="profile-row__crest">
+          ${crestHtml({ iconId: meta.profileIconId, level: meta.summonerLevel, regalia: meta.regalia, size: 36 })}
         </div>
         <div style="min-width: 0;">
           <h4 style="margin: 0 0 0.15rem 0; font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${name}</h4>
@@ -90,10 +86,10 @@ export function mount() {
 
   async function loadProfiles() {
     try {
-      const [profiles, version] = await Promise.all([api.profiles.list(), latestVersion()]);
+      const profiles = await api.profiles.list();
       if (!root.isConnected) return;
       list.innerHTML = profiles.length
-        ? profiles.map((profile) => profileRowHtml(profile, version)).join('')
+        ? profiles.map((profile) => profileRowHtml(profile)).join('')
         : '<div class="empty-state"><p>No profiles saved yet.</p></div>';
       attachImageFallbacks(list);
     } catch (err) {

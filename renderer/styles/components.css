@@ -350,20 +350,11 @@
   position: relative;
   width: 32px;
   height: 32px;
+  margin: 8px 12px 8px 6px;
   flex-shrink: 0;
   display: grid;
   place-items: center;
-  overflow: hidden;
   color: var(--accent-cyan);
-  background: #0a1428;
-  border: 1.5px solid #c89b3c;
-  border-radius: 50%;
-}
-
-.dashboard-status-strip__avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
 }
 
 .dashboard-status-strip__item {
@@ -471,16 +462,29 @@
   display: none;
 }
 
+/* Equipped banner behind the crest, as in the client's profile page. */
+/* The skin is a tall pennant whose ornament sits at the bottom, so it is shown whole. */
+.lol-profile-card__banner {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: 100%;
+  height: calc(100% - 64px);
+  transform: translateX(-50%);
+  background-position: top center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  pointer-events: none;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.6));
+}
+
+/* Keeps the action buttons readable below the banner. */
 .lol-profile-card__frame {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
+  background: linear-gradient(180deg, rgba(10, 14, 24, 0) 78%, rgba(10, 14, 24, 0.9) 100%);
   border-radius: var(--radius-lg);
-  opacity: .45;
-  filter: saturate(1.15) contrast(1.05);
 }
 
 .lol-profile-card__frame::before,
@@ -526,31 +530,60 @@
   margin-bottom: 14px;
 }
 
-.lol-profile-card__moldura-img {
-  position: absolute;
-  top: -72px;
-  left: 50%;
-  width: 240px;
-  height: 400px;
-  transform: translateX(-50%);
-  object-fit: contain;
-  pointer-events: none;
-  z-index: 2;
-  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, .9));
+/* ═══ Regalia crest: profile icon + level ring or ranked wings ═══ */
+.regalia-crest {
+  position: relative;
+  width: var(--crest-size, 84px);
+  height: var(--crest-size, 84px);
+  flex-shrink: 0;
 }
 
-.lol-profile-card__avatar {
-  position: relative;
-  z-index: 1;
-  width: 84px;
-  height: 84px;
+.regalia-crest__icon {
+  position: absolute;
+  inset: 0;
   overflow: hidden;
   border-radius: 50%;
   background: #080d16;
   box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.9);
 }
 
-.lol-profile-card__avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.regalia-crest__icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.regalia-crest__border {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  object-fit: contain;
+  pointer-events: none;
+  transform: translate(-50%, -47%);
+}
+
+/* Client: 200px ring around a ~102px icon slot. */
+.regalia-crest--prestige .regalia-crest__border { width: 196%; height: 196%; }
+
+/* Client: wings at 188% of a crest whose icon fills 76% of it. */
+.regalia-crest--ranked .regalia-crest__border {
+  width: 247%;
+  height: 247%;
+  transform: translate(-50%, -50%);
+}
+
+.regalia-crest--none .regalia-crest__icon {
+  box-shadow: 0 0 0 2px #c89b3c, inset 0 0 10px rgba(0, 0, 0, 0.9);
+}
+
+.profile-row__crest {
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 60px;
+  flex-shrink: 0;
+}
 
 .lol-profile-card__level {
   position: absolute;

@@ -14,6 +14,7 @@ import {
   setSetting,
 } from '../renderer/lib/persisted.js';
 import { profileFileName } from '../renderer/lib/profile-name.js';
+import { bannerImageUrl, bannerSkinPath, crestBorder, gameDataAssetUrl, levelTheme, profileIconUrl } from '../renderer/lib/regalia.js';
 import {
   applyValue,
   booleanValue,
@@ -214,6 +215,48 @@ test('valuesEqual compares numbers numerically and everything else as text', () 
   assert.equal(valuesEqual('[q]', '[Q]'), false);
   assert.equal(valuesEqual('', '0'), false);
   assert.equal(valuesEqual(undefined, ''), true);
+});
+
+test('levelTheme follows the client level ring thresholds', () => {
+  assert.deepEqual(
+    [1, 29, 30, 49, 50, 74, 75, 99, 100, 500, 1200].map(levelTheme),
+    [1, 1, 2, 2, 3, 3, 4, 4, 5, 21, 21],
+  );
+});
+
+test('client asset paths and icons map to CommunityDragon', () => {
+  const gameData = 'https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/default';
+  assert.equal(gameDataAssetUrl('/lol-game-data/assets/ASSETS/Regalia/BannerSkins/Gold.png'), `${gameData}/assets/regalia/bannerskins/gold.png`);
+  assert.equal(gameDataAssetUrl('https://example.com/x.png'), null);
+  assert.equal(profileIconUrl(6923), `${gameData}/v1/profile-icons/6923.jpg`);
+  assert.equal(profileIconUrl(0), `${gameData}/v1/profile-icons/0.jpg`);
+  assert.equal(profileIconUrl(null), 'assets/lol-profile/profile_unranked.png');
+});
+
+test('crestBorder picks the level ring, ranked wings or nothing', () => {
+  const images = 'https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/images';
+  assert.deepEqual(crestBorder({}, 120), { type: 'prestige', url: `${images}/uikit/themed-borders/theme-5-border.png` });
+  assert.deepEqual(crestBorder({ crestType: 'ranked', rankedTier: 'gold' }, 120), { type: 'ranked', url: `${images}/ranked-emblem/wings/wings_gold.png` });
+  assert.equal(crestBorder({ crestType: 'ranked', rankedTier: 'NONE' }, 682).type, 'prestige');
+  assert.deepEqual(crestBorder({ crestType: 'none' }, 120), { type: 'none', url: null });
+  assert.equal(crestBorder({}, null).type, 'none');
+});
+
+test('bannerSkinPath resolves equipped, past-rank and default banners', () => {
+  const skin = (name) => `/lol-game-data/assets/ASSETS/Regalia/BannerSkins/${name}.png`;
+  const catalog = [
+    { id: '1', idSecondary: '', regaliaType: 'kBanner', assetPath: skin('default') },
+    { id: '2', idSecondary: 'UNRANKED', regaliaType: 'kBanner', assetPath: skin('unranked') },
+    { id: '2', idSecondary: 'GOLD', regaliaType: 'kBanner', assetPath: skin('gold') },
+    { id: '9', idSecondary: '', regaliaType: 'kBanner', assetPath: skin('UnkillableDemonKingBanner') },
+    { id: '', idSecondary: '', regaliaType: 'kNone', assetPath: '/lol-game-data/assets/' },
+  ];
+  assert.equal(bannerSkinPath(catalog, { bannerItemId: 9 }), skin('UnkillableDemonKingBanner'));
+  assert.equal(bannerSkinPath(catalog, { bannerItemId: 2, lastSeasonHighestRank: 'GOLD' }), skin('gold'));
+  assert.equal(bannerSkinPath(catalog, { bannerType: 'lastSeasonHighestRank', lastSeasonHighestRank: 'NONE' }), skin('unranked'));
+  assert.equal(bannerSkinPath(catalog, { bannerType: 'blank' }), skin('default'));
+  assert.equal(bannerSkinPath([], { bannerItemId: 9 }), skin('default'));
+  assert.match(bannerImageUrl(null), /\/assets\/regalia\/bannerskins\/default\.png$/);
 });
 
 test('format helpers detect and restore the original layout', () => {

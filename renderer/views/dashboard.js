@@ -2,8 +2,9 @@
 // Live status (account, processes, lock) is pushed by app.js through the
 // "app:status" event; this view only loads files and profiles itself.
 
-import { FALLBACK_ICON_URL, attachImageFallbacks, latestVersion, profileIconUrl } from '../lib/ddragon.js';
 import { escapeHtml } from '../lib/html.js';
+import { attachImageFallbacks, bannerImageUrl } from '../lib/regalia.js';
+import { crestHtml } from './shared/regalia-crest.js';
 import { SLOT_NAMES, isSlotProfile } from '../lib/profile-name.js';
 import { applyValue, iniKey } from '../lib/settings-model.js';
 import { KEYS, readJson, writeJson, writeText } from '../lib/storage.js';
@@ -196,11 +197,15 @@ async function renderStatusStrip({ account, processes, clientRunning, gameRunnin
   lockBadge.textContent = persistedLocked === null ? '—' : persistedLocked ? 'Locked (read-only)' : 'Unlocked';
   byId('btn-toggle-lock').style.display = persistedLocked === null ? 'none' : 'inline-flex';
 
+  const regalia = await api().client.getRegalia();
   const avatar = byId('strip-avatar');
-  const iconUrl = account ? profileIconUrl(await latestVersion(), account.profileIconId) : '';
-  if (avatar.dataset.src !== iconUrl) {
-    avatar.dataset.src = iconUrl;
-    avatar.innerHTML = iconUrl ? `<img src="${escapeHtml(iconUrl)}" data-fallback="${FALLBACK_ICON_URL}" alt="" />` : LOGO_SVG;
+  if (!avatar) return;
+  const avatarKey = account ? JSON.stringify([account.profileIconId, account.summonerLevel, regalia]) : '';
+  if (avatar.dataset.key !== avatarKey) {
+    avatar.dataset.key = avatarKey;
+    avatar.innerHTML = account
+      ? crestHtml({ iconId: account.profileIconId, level: account.summonerLevel, regalia, size: 32 })
+      : LOGO_SVG;
     attachImageFallbacks(avatar);
   }
 }
@@ -270,25 +275,43 @@ async function refreshProfiles() {
   renderSlots(profiles);
   await syncAccountMeta(profiles, account);
 
-  const version = await latestVersion();
   const mappings = readJson(KEYS.accountMappings, {});
   const custom = profiles.filter((p) => !isSlotProfile(p.name));
   grid.innerHTML = custom.length
-    ? custom.map((profile) => profileCardHtml(profile, mappings, account, version)).join('')
+    ? custom.map((profile) => profileCardHtml(profile, mappings, account)).join('')
     : '<p class="text-sm text-muted" style="grid-column: 1 / -1;">No custom profiles yet. Use "Save Current" to create one.</p>';
   attachImageFallbacks(grid);
 }
 
-/** Keeps icon and level of the logged-in account's own profile up to date. */
+/**
+ * Keeps icon, level, crest and banner of the logged-in account's profiles
+ * (its own profile and its dated backups) in sync with the client.
+ */
 async function syncAccountMeta(profiles, account) {
   if (!account?.live) return;
+  const regalia = await api().client.getRegalia();
+  const accountName = account.name.toLowerCase();
+
   for (const summary of profiles) {
     const meta = summary.meta ?? {};
-    if (summary.name.toLowerCase() !== account.name.toLowerCase()) continue;
-    if (meta.profileIconId === account.profileIconId && meta.summonerLevel === account.summonerLevel) continue;
+    const belongsToAccount = summary.name.toLowerCase() === accountName || meta.summonerName?.toLowerCase() === accountName;
+    if (!belongsToAccount || isSlotProfile(summary.name)) continue;
+
+    const upToDate =
+      meta.profileIconId === account.profileIconId &&
+      meta.summonerLevel === account.summonerLevel &&
+      (!regalia || JSON.stringify(meta.regalia) === JSON.stringify(regalia));
+    if (upToDate) continue;
+
     try {
       const profile = await api().profiles.load(summary.name);
-      const updatedMeta = { ...profile.meta, summonerName: account.name, profileIconId: account.profileIconId, summonerLevel: account.summonerLevel };
+      const updatedMeta = {
+        ...profile.meta,
+        summonerName: account.name,
+        profileIconId: account.profileIconId,
+        summonerLevel: account.summonerLevel,
+        regalia: regalia ?? profile.meta?.regalia ?? null,
+      };
       await api().profiles.save({ ...profile, meta: updatedMeta });
       summary.meta = updatedMeta;
     } catch (err) {
@@ -308,7 +331,7 @@ function renderSlots(profiles) {
   });
 }
 
-function profileCardHtml(profile, mappings, account, version) {
+function profileCardHtml(profile, mappings, account) {
   const meta = profile.meta ?? {};
   const name = escapeHtml(profile.name);
   const linkedAccount = Object.entries(mappings).find(([, profileName]) => profileName === profile.name)?.[0];
@@ -324,16 +347,14 @@ function profileCardHtml(profile, mappings, account, version) {
 
   return `
     <div class="profile-card lol-profile-card">
-      <div class="lol-profile-card__frame" style="background: linear-gradient(180deg, rgba(15,23,42,0.6) 0%, rgba(10,14,24,0.95) 100%);" aria-hidden="true"></div>
+      <div class="lol-profile-card__banner" style="background-image: url('${escapeHtml(bannerImageUrl(meta.regalia))}');" aria-hidden="true"></div>
+      <div class="lol-profile-card__frame" aria-hidden="true"></div>
       <div class="lol-profile-card__topline">
         <span class="lol-profile-card__created">${escapeHtml(formatDate(profile.createdAt))}</span>
       </div>
       <div class="lol-profile-card__identity">
         <div class="lol-profile-card__crest-wrapper">
-          <img class="lol-profile-card__moldura-img" src="assets/lol-profile/profile_emblem_hover.png" alt="" aria-hidden="true" />
-          <div class="lol-profile-card__avatar">
-            <img src="${escapeHtml(profileIconUrl(version, meta.profileIconId))}" data-fallback="${FALLBACK_ICON_URL}" alt="" />
-          </div>
+          ${crestHtml({ iconId: meta.profileIconId, level: meta.summonerLevel, regalia: meta.regalia, size: 92 })}
           <span class="lol-profile-card__level">${escapeHtml(meta.summonerLevel ?? '—')}</span>
         </div>
         <h4 class="lol-profile-card__name">${name}</h4>

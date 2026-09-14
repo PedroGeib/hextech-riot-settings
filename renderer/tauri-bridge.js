@@ -10,6 +10,7 @@ import { mergeIni, parseIni, stringifyIni } from './lib/ini.js';
 import { deepMerge } from './lib/merge.js';
 import { mergePersisted } from './lib/persisted.js';
 import { profileFileName } from './lib/profile-name.js';
+import { bannerSkinPath, loadRegaliaCatalog } from './lib/regalia.js';
 import { syncPersistedWithIni } from './lib/settings-model.js';
 import { KEYS, readJson, readText, writeJson, writeText } from './lib/storage.js';
 
@@ -227,13 +228,45 @@ function getCurrentAccount() {
   return promise;
 }
 
-async function readRegalia() {
-  try {
+const REGALIA_CACHE_MS = 60_000;
+let regaliaCache = { key: null, at: 0, promise: null };
+
+/**
+ * What the client draws around the logged-in account: crest (level ring or
+ * ranked wings) and banner skin. Stored in profiles so cards keep the look
+ * the account had when the profile was saved.
+ */
+async function readAccountRegalia(account) {
+  if (!account?.live) return null;
+  const key = `${account.name}:${account.summonerLevel}:${account.profileIconId}`;
+  if (regaliaCache.key === key && Date.now() - regaliaCache.at < REGALIA_CACHE_MS) return regaliaCache.promise;
+
+  const promise = (async () => {
     const { installRoot } = await resolvePaths();
-    return await invoke('read_client_route', { installRoot, route: '/lol-regalia/v2/current-summoner/regalia' });
-  } catch {
+    const route = (path) => invoke('read_client_route', { installRoot, route: path }).catch(() => null);
+    const [regalia, loadouts] = await Promise.all([
+      route('/lol-regalia/v2/current-summoner/regalia'),
+      route('/lol-loadouts/v4/loadouts/scope/account'),
+    ]);
+    if (!regalia) return null;
+
+    const bannerSlot = (Array.isArray(loadouts) ? loadouts : []).map((l) => l?.loadout?.REGALIA_BANNER_SLOT).find(Boolean);
+    const summary = {
+      crestType: regalia.crestType ?? 'prestige',
+      bannerType: regalia.bannerType ?? 'blank',
+      rankedTier: regalia.highestRankedEntry?.tier ?? null,
+      lastSeasonHighestRank: regalia.lastSeasonHighestRank ?? null,
+      bannerItemId: bannerSlot?.itemId ?? null,
+    };
+    summary.bannerAssetPath = bannerSkinPath(await loadRegaliaCatalog(), summary);
+    return summary;
+  })().catch((err) => {
+    console.warn('Could not read the account crest and banner:', err);
     return null;
-  }
+  });
+
+  regaliaCache = { key, at: Date.now(), promise };
+  return promise;
 }
 
 // ─── History ────────────────────────────────────────────────────────────────
@@ -316,7 +349,7 @@ async function quickSaveProfile(name) {
       summonerName: account?.name ?? null,
       profileIconId: account?.profileIconId ?? null,
       summonerLevel: account?.summonerLevel ?? null,
-      regalia: account?.live ? await readRegalia() : null,
+      regalia: await readAccountRegalia(account),
     },
     targets,
     originalTargets: structuredClone(targets),
@@ -410,6 +443,8 @@ window.api = {
     setLocaleAndRegion: ({ locale, region }) => patchClient({ install: { globals: { locale, region } } }),
     getCurrentSummonerProfile: getCurrentAccount,
     getCurrentSummonerName: async () => (await getCurrentAccount())?.name ?? null,
+    /** Crest and banner of the logged-in account, or null when the client is closed. */
+    getRegalia: async () => readAccountRegalia(await getCurrentAccount()),
   },
 
   profiles: {

@@ -26,9 +26,10 @@ const RIOT_PROCESSES: [&str; 4] = [
 ];
 
 /// League client routes the UI is allowed to read.
-const CLIENT_READ_ROUTES: [&str; 2] = [
+const CLIENT_READ_ROUTES: [&str; 3] = [
   "/lol-summoner/v1/current-summoner",
   "/lol-regalia/v2/current-summoner/regalia",
+  "/lol-loadouts/v4/loadouts/scope/account",
 ];
 
 fn home_dir() -> Result<PathBuf, String> {
