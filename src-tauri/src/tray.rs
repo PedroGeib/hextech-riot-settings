@@ -1,20 +1,12 @@
-//! System tray icon. Closing the window hides it instead of quitting, so
-//! global hotkeys, auto profile switching and backups keep working.
-
-use std::sync::atomic::{AtomicBool, Ordering};
+//! System tray icon with shortcuts to open the window, apply the quick slots
+//! and quit. Closing the window quits the app.
 
 use tauri::menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Emitter, Manager, Window, WindowEvent, Wry};
+use tauri::{AppHandle, Emitter, Manager, Wry};
 
 /// Launch argument used by "Launch on startup" to start hidden in the tray.
 pub const MINIMIZED_ARG: &str = "--minimized";
-
-static CLOSE_TO_TRAY: AtomicBool = AtomicBool::new(true);
-
-pub fn set_close_to_tray(enabled: bool) {
-  CLOSE_TO_TRAY.store(enabled, Ordering::SeqCst);
-}
 
 pub fn show_main_window(app: &AppHandle) {
   if let Some(window) = app.get_webview_window("main") {
@@ -25,10 +17,10 @@ pub fn show_main_window(app: &AppHandle) {
 }
 
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
-  let open = MenuItem::with_id(app, "open", "Abrir Hextech Riot Settings", true, None::<&str>)?;
-  let slot_1 = MenuItem::with_id(app, "slot-1", "Aplicar Slot 1", true, None::<&str>)?;
-  let slot_2 = MenuItem::with_id(app, "slot-2", "Aplicar Slot 2", true, None::<&str>)?;
-  let quit = MenuItem::with_id(app, "quit", "Sair", true, None::<&str>)?;
+  let open = MenuItem::with_id(app, "open", "Open Hextech Riot Settings", true, None::<&str>)?;
+  let slot_1 = MenuItem::with_id(app, "slot-1", "Apply Slot 1", true, None::<&str>)?;
+  let slot_2 = MenuItem::with_id(app, "slot-2", "Apply Slot 2", true, None::<&str>)?;
+  let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
   let separator_1 = PredefinedMenuItem::separator(app)?;
   let separator_2 = PredefinedMenuItem::separator(app)?;
   let items: [&dyn IsMenuItem<Wry>; 6] = [&open, &separator_1, &slot_1, &slot_2, &separator_2, &quit];
@@ -61,13 +53,4 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
   }
   builder.build(app)?;
   Ok(())
-}
-
-pub fn handle_window_event(window: &Window, event: &WindowEvent) {
-  if let WindowEvent::CloseRequested { api, .. } = event {
-    if window.label() == "main" && CLOSE_TO_TRAY.load(Ordering::SeqCst) {
-      api.prevent_close();
-      let _ = window.hide();
-    }
-  }
 }

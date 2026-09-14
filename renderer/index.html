@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="pt-BR">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -21,28 +21,28 @@
 
     <div class="titlebar__status" id="titlebar-status-widget">
       <span class="titlebar__account">
-        <button type="button" class="status-badge status-badge--offline" id="titlebar-lock-badge" style="display: none;" title="Trava ou destrava o PersistedSettings.json (pausa a sincronização com a nuvem da Riot)">Destravado</button>
-        <span class="titlebar__account-label">Conta:</span>
-        <span class="titlebar__account-name" id="titlebar-account-name">Nenhuma</span>
+        <button type="button" class="status-badge status-badge--offline" id="titlebar-lock-badge" style="display: none;" title="Lock or unlock PersistedSettings.json (pauses Riot cloud sync)">Unlocked</button>
+        <span class="titlebar__account-label">Account:</span>
+        <span class="titlebar__account-name" id="titlebar-account-name">None</span>
       </span>
-      <span class="status-badge status-badge--offline" id="titlebar-client-badge">Client fechado</span>
+      <span class="status-badge status-badge--offline" id="titlebar-client-badge">Client Offline</span>
     </div>
 
     <div class="titlebar__controls">
-      <button class="titlebar__btn titlebar__btn--minimize" id="btn-minimize" aria-label="Minimizar" title="Minimizar">
+      <button class="titlebar__btn titlebar__btn--minimize" id="btn-minimize" aria-label="Minimize" title="Minimize">
         <svg width="12" height="12" viewBox="0 0 12 12"><rect y="5" width="12" height="1.5" rx="0.75" fill="currentColor"/></svg>
       </button>
-      <button class="titlebar__btn titlebar__btn--maximize" id="btn-maximize" aria-label="Maximizar" title="Maximizar">
+      <button class="titlebar__btn titlebar__btn--maximize" id="btn-maximize" aria-label="Maximize" title="Maximize">
         <svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" rx="1.5" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
       </button>
-      <button class="titlebar__btn titlebar__btn--close" id="btn-close" aria-label="Fechar" title="Fechar (o app continua na bandeja)">
+      <button class="titlebar__btn titlebar__btn--close" id="btn-close" aria-label="Close" title="Close">
         <svg width="12" height="12" viewBox="0 0 12 12"><path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
       </button>
     </div>
   </div>
 
   <!-- ═══ Sidebar ═══ -->
-  <nav class="sidebar" id="sidebar" aria-label="Principal">
+  <nav class="sidebar" id="sidebar" aria-label="Main">
     <div class="sidebar__brand">
       <div class="sidebar__logo">
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
@@ -59,11 +59,11 @@
     </div>
 
     <div class="sidebar__nav">
-      <button class="nav-item nav-item--active" data-view="dashboard" id="nav-dashboard" title="Painel (Ctrl+1)">
+      <button class="nav-item nav-item--active" data-view="dashboard" id="nav-dashboard" title="Dashboard (Ctrl+1)">
         <svg class="nav-item__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
         </svg>
-        <span class="nav-item__label">Painel</span>
+        <span class="nav-item__label">Dashboard</span>
       </button>
 
       <button class="nav-item" data-view="lol" id="nav-lol" title="League of Legends (Ctrl+2)">
@@ -80,39 +80,39 @@
         <span class="nav-item__label">Teamfight Tactics</span>
       </button>
 
-      <button class="nav-item" data-view="client" id="nav-client" title="Client (Ctrl+4)">
+      <button class="nav-item" data-view="client" id="nav-client" title="Client Settings (Ctrl+4)">
         <svg class="nav-item__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
         </svg>
-        <span class="nav-item__label">Client</span>
+        <span class="nav-item__label">Client Settings</span>
       </button>
 
-      <button class="nav-item" data-view="profiles" id="nav-profiles" title="Perfis (Ctrl+5)">
+      <button class="nav-item" data-view="profiles" id="nav-profiles" title="Profiles (Ctrl+5)">
         <svg class="nav-item__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/><polyline points="17,21 17,13 7,13 7,21"/><polyline points="7,3 7,8 15,8"/>
         </svg>
-        <span class="nav-item__label">Perfis</span>
+        <span class="nav-item__label">Profiles</span>
       </button>
 
-      <button class="nav-item" data-view="rawConfigs" id="nav-raw-configs" title="Todas as configurações (Ctrl+6)">
+      <button class="nav-item" data-view="rawConfigs" id="nav-raw-configs" title="All Configs (Ctrl+6)">
         <svg class="nav-item__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="9" x2="15" y2="9"></line><line x1="9" y1="13" x2="15" y2="13"></line><line x1="9" y1="17" x2="13" y2="17"></line>
         </svg>
-        <span class="nav-item__label">Todas as configs</span>
+        <span class="nav-item__label">All Configs</span>
       </button>
 
-      <button class="nav-item" data-view="appSettings" id="nav-app-settings" title="Configurações (Ctrl+7)">
+      <button class="nav-item" data-view="appSettings" id="nav-app-settings" title="App Settings (Ctrl+7)">
         <svg class="nav-item__icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/>
         </svg>
-        <span class="nav-item__label">Configurações</span>
+        <span class="nav-item__label">App Settings</span>
       </button>
     </div>
 
     <div class="sidebar__footer" id="sidebar-status">
       <div class="status-badge status-badge--offline" id="client-status-badge">
         <span class="status-badge__dot"></span>
-        <span class="status-badge__text">Client fechado</span>
+        <span class="status-badge__text">Client Offline</span>
       </div>
     </div>
   </nav>

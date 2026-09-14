@@ -6,17 +6,17 @@ import { errorMessage, toast, withBusyButtons } from '../lib/ui.js';
 
 // [id, label, accent color shown in the swatch]
 const THEMES = [
-  ['default', 'Azul do Vazio (padrão)', '#1fc7e6'],
-  ['hextech', 'Hextec (Piltover)', '#c89b3c'],
-  ['chemtech', 'Quimtec (Zaun)', '#39e53d'],
-  ['void', 'Roxo do Vazio', '#ca46ff'],
-  ['shadowisles', 'Ilhas das Sombras', '#00f0b5'],
-  ['noxus', 'Carmesim de Noxus', '#ff4d4d'],
-  ['demacia', 'Ouro de Demacia', '#e5b955'],
-  ['shurima', 'Deserto de Shurima', '#ffc400'],
-  ['ionia', 'Espírito de Ionia', '#ff6eb4'],
-  ['freljord', 'Gelo de Freljord', '#80e5ff'],
-  ['bilgewater', 'Águas de Sentina', '#ff8a1f'],
+  ['default', 'Void Blue (default)', '#1fc7e6'],
+  ['hextech', 'Hextech (Piltover)', '#c89b3c'],
+  ['chemtech', 'Chemtech (Zaun)', '#39e53d'],
+  ['void', 'Void Purple', '#ca46ff'],
+  ['shadowisles', 'Shadow Isles', '#00f0b5'],
+  ['noxus', 'Noxian Crimson', '#ff4d4d'],
+  ['demacia', 'Demacian Gold', '#e5b955'],
+  ['shurima', 'Shuriman Sands', '#ffc400'],
+  ['ionia', 'Ionian Spirit', '#ff6eb4'],
+  ['freljord', 'Freljord Ice', '#80e5ff'],
+  ['bilgewater', 'Bilgewater Tides', '#ff8a1f'],
 ];
 
 function toggleRow(id, title, description) {
@@ -30,21 +30,21 @@ function toggleRow(id, title, description) {
     </div>`;
 }
 
-const enabledText = (enabled) => (enabled ? 'ativada' : 'desativada');
+const enabledText = (enabled) => (enabled ? 'enabled' : 'disabled');
 
 export function render() {
   return `
     <div class="page-container animate-fade-in">
       <div class="page-header mb-6">
-        <h1 class="page-title text-cyan">Configurações</h1>
-        <p class="page-subtitle">Tema, automação e local de instalação do League of Legends</p>
+        <h1 class="page-title text-cyan">App Settings</h1>
+        <p class="page-subtitle">Theme, automation and League of Legends install location</p>
       </div>
 
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <section class="card">
-          <div class="card-header"><h3 class="card-title text-violet">Tema</h3></div>
+          <div class="card-header"><h3 class="card-title text-violet">Theme</h3></div>
           <div class="card-body">
-            <p class="text-sm text-muted mb-4">Cores inspiradas nas regiões de Runeterra.</p>
+            <p class="text-sm text-muted mb-4">Colors inspired by the regions of Runeterra.</p>
             <div id="theme-buttons" class="theme-grid">
               ${THEMES.map(([id, label, color]) => `
                 <button type="button" class="btn btn--secondary theme-btn" data-theme="${id}" aria-pressed="false">
@@ -55,24 +55,23 @@ export function render() {
         </section>
 
         <section class="card">
-          <div class="card-header"><h3 class="card-title text-violet">Automação e controles</h3></div>
+          <div class="card-header"><h3 class="card-title text-violet">Automation & Controls</h3></div>
           <div class="card-body" style="padding: 0;">
-            ${toggleRow('cfg-auto-switcher', 'Troca automática de perfil', 'Aplica o perfil vinculado quando a conta entra no client.')}
-            ${toggleRow('cfg-global-hotkeys', 'Atalhos globais (Ctrl+Alt+1 / 2)', 'Aplica o Slot 1 ou 2 de qualquer lugar do Windows.')}
-            ${toggleRow('cfg-run-startup', 'Iniciar com o Windows', 'Abre o Hextech Riot Settings na bandeja quando você entra no Windows.')}
-            ${toggleRow('cfg-close-to-tray', 'Continuar na bandeja ao fechar', 'Fechar a janela mantém o app na bandeja do sistema, para os atalhos e a automação continuarem funcionando.')}
+            ${toggleRow('cfg-auto-switcher', 'Auto Profile Switcher', 'Applies the linked profile when the account logs in to the client.')}
+            ${toggleRow('cfg-global-hotkeys', 'Global Hotkeys (Ctrl+Alt+1 / 2)', 'Applies Slot 1 or 2 from anywhere in Windows.')}
+            ${toggleRow('cfg-run-startup', 'Launch on Startup', 'Starts Hextech Riot Settings in the tray when you sign in to Windows.')}
           </div>
         </section>
       </div>
 
       <div class="card" style="margin-top: 24px;">
-        <div class="card-header"><h3 class="card-title text-cyan">Instalação do League of Legends</h3></div>
+        <div class="card-header"><h3 class="card-title text-cyan">League of Legends Installation</h3></div>
         <div class="card-body">
-          <p class="text-sm text-muted mb-4">Detectada automaticamente nas pastas comuns. Se o jogo estiver em outro lugar, informe a pasta dele (ou a pasta "Riot Games" que a contém).</p>
+          <p class="text-sm text-muted mb-4">Detected automatically in the usual folders. If the game is somewhere else, enter its folder (or the "Riot Games" folder that contains it).</p>
           <form id="install-path-form" class="flex gap-4 items-center" style="flex-wrap: wrap;">
-            <input type="text" id="cfg-install-path" class="input-control flex-1" aria-label="Pasta de instalação" placeholder="C:\\Riot Games\\League of Legends" style="min-width: 260px;" />
-            <button type="submit" class="btn btn--primary">Salvar caminho</button>
-            <button type="button" id="btn-reset-path" class="btn btn--secondary">Detectar automaticamente</button>
+            <input type="text" id="cfg-install-path" class="input-control flex-1" aria-label="Install folder" placeholder="C:\\Riot Games\\League of Legends" style="min-width: 260px;" />
+            <button type="submit" class="btn btn--primary">Save Path</button>
+            <button type="button" id="btn-reset-path" class="btn btn--secondary">Auto-detect</button>
           </form>
           <p class="text-xs text-muted" id="detected-path" style="margin: 12px 0 0; font-family: monospace;"></p>
         </div>
@@ -80,8 +79,8 @@ export function render() {
 
       <div class="card" style="margin-top: 24px;">
         <div class="card-body flex justify-between items-center" style="gap: 16px; flex-wrap: wrap;">
-          <p class="text-sm text-muted" style="margin: 0;">Encerra o app por completo, inclusive a bandeja, os atalhos e a automação.</p>
-          <button type="button" id="btn-quit-app" class="btn btn--danger">Sair do app</button>
+          <p class="text-sm text-muted" style="margin: 0;">Closes the app completely, including the tray icon, hotkeys and automation.</p>
+          <button type="button" id="btn-quit-app" class="btn btn--danger">Quit App</button>
         </div>
       </div>
     </div>`;
@@ -113,7 +112,7 @@ export function mount() {
   autoSwitcher.checked = readFlag(KEYS.autoSwitcher, true);
   autoSwitcher.addEventListener('change', () => {
     writeFlag(KEYS.autoSwitcher, autoSwitcher.checked);
-    toast(`Troca automática de perfil ${enabledText(autoSwitcher.checked)}`, 'success');
+    toast(`Auto profile switcher ${enabledText(autoSwitcher.checked)}`, 'success');
   });
 
   const hotkeys = document.getElementById('cfg-global-hotkeys');
@@ -122,22 +121,10 @@ export function mount() {
     try {
       await api.system.setGlobalHotkeys(hotkeys.checked);
       writeFlag(KEYS.globalHotkeys, hotkeys.checked);
-      toast(`Atalhos globais ${hotkeys.checked ? 'ativados' : 'desativados'}`, 'success');
+      toast(`Global hotkeys ${enabledText(hotkeys.checked)}`, 'success');
     } catch (err) {
       hotkeys.checked = !hotkeys.checked;
-      toast(`Não foi possível alterar os atalhos: ${errorMessage(err)}`, 'error');
-    }
-  });
-
-  const closeToTray = document.getElementById('cfg-close-to-tray');
-  closeToTray.checked = readFlag(KEYS.closeToTray, true);
-  closeToTray.addEventListener('change', async () => {
-    try {
-      await api.system.setCloseToTray(closeToTray.checked);
-      writeFlag(KEYS.closeToTray, closeToTray.checked);
-    } catch (err) {
-      closeToTray.checked = !closeToTray.checked;
-      toast(`Não foi possível alterar esta opção: ${errorMessage(err)}`, 'error');
+      toast(`Could not change the hotkeys: ${errorMessage(err)}`, 'error');
     }
   });
 
@@ -151,10 +138,10 @@ export function mount() {
   startup.addEventListener('change', async () => {
     try {
       await api.system.setAutostart(startup.checked);
-      toast(`Iniciar com o Windows ${startup.checked ? 'ativado' : 'desativado'}`, 'success');
+      toast(`Launch on startup ${enabledText(startup.checked)}`, 'success');
     } catch (err) {
       startup.checked = !startup.checked;
-      toast(`Não foi possível alterar a inicialização: ${errorMessage(err)}`, 'error');
+      toast(`Could not change the startup setting: ${errorMessage(err)}`, 'error');
     }
   });
 
@@ -167,17 +154,17 @@ export function mount() {
   const showDetected = () =>
     api.paths
       .resolve()
-      .then((paths) => { detected.textContent = `Em uso: ${paths.installRoot}`; })
+      .then((paths) => { detected.textContent = `In use: ${paths.installRoot}`; })
       .catch((err) => { detected.textContent = errorMessage(err); });
   showDetected();
 
   const savePath = (value, button) =>
-    withBusyButtons([button], 'Verificando…', async () => {
+    withBusyButtons([button], 'Checking…', async () => {
       try {
         const paths = await api.paths.setInstallPath(value);
         pathInput.value = readText(KEYS.installPath, '');
-        detected.textContent = `Em uso: ${paths.installRoot}`;
-        toast(value ? 'Caminho de instalação salvo' : 'Usando detecção automática', 'success');
+        detected.textContent = `In use: ${paths.installRoot}`;
+        toast(value ? 'Install path saved' : 'Using auto-detection', 'success');
         window.refreshStatus();
       } catch (err) {
         toast(errorMessage(err), 'error');

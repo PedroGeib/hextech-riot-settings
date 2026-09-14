@@ -40,7 +40,7 @@ function showToast(message, type = 'info') {
   toast.innerHTML = `
     <div class="toast__icon">${TOAST_ICONS[type] ?? TOAST_ICONS.info}</div>
     <div class="toast__message"></div>
-    <button class="toast__close" aria-label="Fechar">
+    <button class="toast__close" aria-label="Close">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
     <div class="toast__progress" style="animation-duration: ${lifetime}ms;"></div>`;
@@ -104,7 +104,7 @@ function openModal({ title, body, footer, wide = false }) {
 }
 
 /** Confirmation dialog; resolves true when confirmed. `body` is HTML. */
-function showModal({ title = 'Confirmar', body = '', confirmText = 'Confirmar', cancelText = 'Cancelar', danger = false }) {
+function showModal({ title = 'Confirm', body = '', confirmText = 'Confirm', cancelText = 'Cancel', danger = false }) {
   return new Promise((resolve) => {
     const modal = openModal({
       title,
@@ -157,7 +157,7 @@ function navigateTo(name) {
     .then(() => view.mount())
     .catch((err) => {
       console.error(`Failed to mount view "${name}":`, err);
-      showToast(`Esta página não carregou: ${errorMessage(err)}`, 'error');
+      showToast(`This page failed to load: ${errorMessage(err)}`, 'error');
     });
 }
 
@@ -180,7 +180,7 @@ const appState = { account: null, processes: [], clientRunning: false, gameRunni
 window.appState = appState;
 
 function renderStatusChrome() {
-  const clientText = appState.gameRunning ? 'Em partida' : appState.clientRunning ? 'Client aberto' : 'Client fechado';
+  const clientText = appState.gameRunning ? 'In Game' : appState.clientRunning ? 'Client Online' : 'Client Offline';
   const clientClass = `status-badge status-badge--${appState.clientRunning || appState.gameRunning ? 'online' : 'offline'}`;
 
   const sidebarBadge = byId('client-status-badge');
@@ -191,12 +191,12 @@ function renderStatusChrome() {
   titlebarBadge.className = clientClass;
   titlebarBadge.textContent = clientText;
 
-  byId('titlebar-account-name').textContent = appState.account?.name ?? 'Nenhuma';
+  byId('titlebar-account-name').textContent = appState.account?.name ?? 'None';
 
   const lockBadge = byId('titlebar-lock-badge');
   lockBadge.style.display = appState.persistedLocked === null ? 'none' : '';
   lockBadge.className = `status-badge status-badge--${appState.persistedLocked ? 'locked' : 'offline'}`;
-  lockBadge.textContent = appState.persistedLocked ? 'Travado' : 'Destravado';
+  lockBadge.textContent = appState.persistedLocked ? 'Locked' : 'Unlocked';
 }
 
 let statusTimer = null;
@@ -245,13 +245,13 @@ async function toggleCloudSyncLock() {
     else await api.lock.setReadOnly(persistedSettings);
     showToast(
       locked
-        ? 'PersistedSettings.json destravado: a nuvem da Riot pode atualizá-lo de novo'
-        : 'PersistedSettings.json travado: a nuvem da Riot não consegue mais sobrescrevê-lo',
+        ? 'PersistedSettings.json unlocked: Riot cloud sync can update it again'
+        : 'PersistedSettings.json locked: Riot cloud sync can no longer overwrite it',
       'success',
     );
     await refreshStatus();
   } catch (err) {
-    showToast(`Não foi possível alterar a trava: ${errorMessage(err)}`, 'error');
+    showToast(`Could not change the lock: ${errorMessage(err)}`, 'error');
   }
 }
 
@@ -287,9 +287,9 @@ async function applyLinkedProfile(account) {
   writeText(KEYS.lastAutoApplied, combination);
   try {
     await api.profiles.applyAll(await api.profiles.load(profileName));
-    showToast(`Troca automática: "${profileName}" aplicado para ${account.name}`, 'success');
+    showToast(`Auto-switch: applied "${profileName}" for ${account.name}`, 'success');
   } catch (err) {
-    showToast(`A troca automática não conseguiu aplicar "${profileName}": ${errorMessage(err)}`, 'error');
+    showToast(`Auto-switch could not apply "${profileName}": ${errorMessage(err)}`, 'error');
   }
 }
 
@@ -307,7 +307,7 @@ async function ensureAccountBackup(account) {
     if (readFlag(KEYS.autoSavedAccount(account.name), false)) return;
     await api.profiles.quickSave(account.name);
     writeFlag(KEYS.autoSavedAccount(account.name), true);
-    showToast(`Nova conta detectada: configurações salvas no perfil "${account.name}"`, 'success');
+    showToast(`New account detected: settings saved to profile "${account.name}"`, 'success');
     return;
   }
 
@@ -318,7 +318,7 @@ async function ensureAccountBackup(account) {
     matches.reduce((newest, p) => (lastSaved(p) > lastSaved(newest) ? p : newest));
   if (Date.now() - lastSaved(target) > BACKUP_MAX_AGE_MS) {
     await api.profiles.quickSave(target.name);
-    showToast(`Perfil "${target.name}" atualizado com as configurações atuais`, 'success');
+    showToast(`Profile "${target.name}" updated with the current settings`, 'success');
   }
 }
 
@@ -328,16 +328,12 @@ api.system.setGlobalHotkeys(readFlag(KEYS.globalHotkeys, true)).catch((err) => {
   console.warn('Could not configure global hotkeys:', err);
 });
 
-api.system.setCloseToTray(readFlag(KEYS.closeToTray, true)).catch((err) => {
-  console.warn('Could not configure the tray behavior:', err);
-});
-
 // Fired by Ctrl+Alt+1/2 and by the tray menu.
 api.profiles.onGlobalHotkey(async (slot) => {
   const slotName = `Slot_${slot}`;
   try {
     await api.profiles.applyAll(await api.profiles.load(slotName));
-    showToast(`Slot ${slot} aplicado`, 'success');
+    showToast(`Slot ${slot} applied`, 'success');
   } catch (err) {
     showToast(`Slot ${slot}: ${errorMessage(err)}`, 'error');
   }

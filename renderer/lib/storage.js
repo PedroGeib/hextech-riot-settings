@@ -7,7 +7,6 @@ export const KEYS = {
   theme: 'app-theme',
   autoSwitcher: 'app-settings-auto-switcher',
   globalHotkeys: 'app-settings-global-hotkeys',
-  closeToTray: 'app-settings-close-to-tray',
   accountMappings: 'account-profile-mappings',
   lastAutoApplied: 'last-auto-applied-combination',
   lastAccount: 'last-active-account',

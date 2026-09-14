@@ -37,7 +37,7 @@ fn home_dir() -> Result<PathBuf, String> {
   std::env::var_os("USERPROFILE")
     .or_else(|| std::env::var_os("HOME"))
     .map(PathBuf::from)
-    .ok_or_else(|| "Não foi possível encontrar a pasta do usuário".to_string())
+    .ok_or_else(|| "Could not determine the user folder".to_string())
 }
 
 fn profiles_dir() -> Result<PathBuf, String> {
@@ -146,7 +146,7 @@ async fn get_summoner_profile(install_root: String) -> Result<Option<summoner::S
 #[tauri::command]
 async fn read_client_route(install_root: String, route: String) -> Result<serde_json::Value, String> {
   if !CLIENT_READ_ROUTES.contains(&route.as_str()) {
-    return Err(format!("Rota do client não permitida: {route}"));
+    return Err(format!("Client route not allowed: {route}"));
   }
   lcu::get_json(Path::new(&install_root), &route).await
 }
@@ -158,7 +158,7 @@ fn set_autostart(enabled: bool) -> Result<(), String> {
   #[cfg(not(windows))]
   {
     let _ = enabled;
-    Err("Iniciar com o sistema só funciona no Windows".to_string())
+    Err("Launch on startup is only supported on Windows".to_string())
   }
 }
 
@@ -176,11 +176,6 @@ fn set_global_hotkeys(enabled: bool) {
   hotkeys::set_enabled(enabled);
   #[cfg(not(windows))]
   let _ = enabled;
-}
-
-#[tauri::command]
-fn set_close_to_tray(enabled: bool) {
-  tray::set_close_to_tray(enabled);
 }
 
 #[tauri::command]
@@ -234,13 +229,11 @@ pub fn run() {
       set_autostart,
       is_autostart_enabled,
       set_global_hotkeys,
-      set_close_to_tray,
       quit_app,
       minimize_window,
       toggle_maximize_window,
       close_window,
     ])
-    .on_window_event(tray::handle_window_event)
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(

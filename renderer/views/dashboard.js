@@ -10,7 +10,7 @@ import { applyValue, iniKey } from '../lib/settings-model.js';
 import { KEYS, readJson, writeJson, writeText } from '../lib/storage.js';
 import { confirmAction, errorMessage, toast, withBusyButtons } from '../lib/ui.js';
 
-const WINDOW_MODES = { 0: 'Tela cheia', 1: 'Janela', 2: 'Sem bordas' };
+const WINDOW_MODES = { 0: 'Fullscreen', 1: 'Windowed', 2: 'Borderless' };
 
 // Lowest-cost values for settings that exist in game.cfg. Keys missing from
 // the user's file are skipped rather than created.
@@ -37,7 +37,7 @@ const byId = (id) => document.getElementById(id);
 
 function formatDate(value) {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value ?? '') : date.toLocaleString('pt-BR');
+  return Number.isNaN(date.getTime()) ? String(value ?? '') : date.toLocaleString();
 }
 
 // ─── Template ───────────────────────────────────────────────────────────────
@@ -55,11 +55,11 @@ function slotCard(index) {
     <div class="dashboard-slot-card">
       <div>
         <h4 class="dashboard-slot-card__title">Slot ${index} <kbd class="kbd-hint">Ctrl+Alt+${index}</kbd></h4>
-        <p class="dashboard-slot-card__status" id="slot-${index}-status">Vazio</p>
+        <p class="dashboard-slot-card__status" id="slot-${index}-status">Empty</p>
       </div>
       <div class="dashboard-slot-card__actions">
-        <button data-slot-save="${index}" class="btn btn--primary btn--sm">Salvar atual</button>
-        <button data-slot-apply="${index}" class="btn btn--secondary btn--sm" style="display: none;">Aplicar</button>
+        <button data-slot-save="${index}" class="btn btn--primary btn--sm">Save Current</button>
+        <button data-slot-apply="${index}" class="btn btn--secondary btn--sm" style="display: none;">Apply</button>
       </div>
     </div>`;
 }
@@ -68,72 +68,72 @@ export function render() {
   return `
     <div id="dashboard-view" class="view-container">
       <header class="page-header">
-        <h1>Painel</h1>
-        <p class="subtitle">Acompanhe e gerencie as configurações dos jogos da Riot</p>
+        <h1>Dashboard</h1>
+        <p class="subtitle">Monitor and manage your Riot game settings</p>
       </header>
 
-      <section class="dashboard-status-strip" aria-label="Status da conta ativa">
+      <section class="dashboard-status-strip" aria-label="Active account status">
         <div class="dashboard-status-strip__avatar" id="strip-avatar">${LOGO_SVG}</div>
 
         <div class="dashboard-status-strip__item">
-          <span class="dashboard-status-strip__label">Conta ativa</span>
-          <span class="dashboard-status-strip__value" id="strip-account-name">Detectando…</span>
+          <span class="dashboard-status-strip__label">Active Account</span>
+          <span class="dashboard-status-strip__value" id="strip-account-name">Detecting…</span>
           <span class="dashboard-status-strip__level" id="strip-account-level" style="display: none;"></span>
         </div>
 
         <div class="dashboard-status-strip__item">
           <span class="dashboard-status-strip__label">Client</span>
           <span class="dashboard-status-strip__value">
-            <span class="status-badge status-badge--offline" id="strip-client-badge">Fechado</span>
+            <span class="status-badge status-badge--offline" id="strip-client-badge">Offline</span>
             <span class="dashboard-status-strip__detail" id="strip-client-detail"></span>
           </span>
         </div>
 
         <div class="dashboard-status-strip__item dashboard-status-strip__item--lock">
-          <span class="dashboard-status-strip__label">Trava da nuvem</span>
+          <span class="dashboard-status-strip__label">Cloud Sync Lock</span>
           <span class="dashboard-status-strip__value">
             <span class="status-badge status-badge--offline" id="strip-lock-badge">—</span>
           </span>
         </div>
 
         <div class="dashboard-status-strip__action">
-          <button id="btn-toggle-lock" class="btn btn--secondary btn--sm" style="display: none;">Alternar trava</button>
+          <button id="btn-toggle-lock" class="btn btn--secondary btn--sm" style="display: none;">Toggle Lock</button>
         </div>
 
         <div class="dashboard-status-strip__files">
-          <span class="dashboard-status-strip__label" style="margin-bottom: 6px;">Arquivos</span>
+          <span class="dashboard-status-strip__label" style="margin-bottom: 6px;">Files</span>
           <div class="dashboard-status-strip__file-list" id="strip-config-files">
-            <span class="text-xs text-muted">Verificando…</span>
+            <span class="text-xs text-muted">Checking…</span>
           </div>
         </div>
       </section>
 
       <section class="card">
         <div class="card-header">
-          <h3 class="card-title">Perfis</h3>
+          <h3 class="card-title">Profiles</h3>
           <div class="card-actions">
-            <button id="btn-refresh-profiles" class="btn btn--secondary btn--sm">Atualizar</button>
-            <button id="btn-quick-save" class="btn btn--primary btn--sm">Salvar atual</button>
+            <button id="btn-refresh-profiles" class="btn btn--secondary btn--sm">Refresh</button>
+            <button id="btn-quick-save" class="btn btn--primary btn--sm">Save Current</button>
           </div>
         </div>
         <div class="dashboard-profiles-grid" id="dashboard-profiles-grid"></div>
       </section>
 
       <section class="card">
-        <div class="card-header"><h3 class="card-title">Configurações atuais do jogo</h3></div>
+        <div class="card-header"><h3 class="card-title">Current Game Settings</h3></div>
         <div class="summary-grid">
-          ${summaryItem('summary-resolution', 'Resolução')}
-          ${summaryItem('summary-windowmode', 'Modo de janela')}
-          ${summaryItem('summary-volume', 'Volume geral')}
-          ${summaryItem('summary-language', 'Idioma do client')}
+          ${summaryItem('summary-resolution', 'Resolution')}
+          ${summaryItem('summary-windowmode', 'Window Mode')}
+          ${summaryItem('summary-volume', 'Master Volume')}
+          ${summaryItem('summary-language', 'Client Language')}
         </div>
       </section>
 
       <section class="card">
         <div class="card-header">
           <div>
-            <h3 class="card-title">Slots rápidos</h3>
-            <p class="card-subtitle">Também aplicáveis pelos atalhos globais e pelo menu da bandeja.</p>
+            <h3 class="card-title">Quick Slots</h3>
+            <p class="card-subtitle">Also available from the global hotkeys and the tray menu.</p>
           </div>
         </div>
         <div class="dashboard-slots-grid">${SLOT_NAMES.map((_, i) => slotCard(i + 1)).join('')}</div>
@@ -143,18 +143,18 @@ export function render() {
         <div class="card-header">
           <div>
             <h3 class="card-title">Backups</h3>
-            <p class="card-subtitle">Antes de qualquer alteração, uma cópia dos arquivos atuais é salva automaticamente. As 5 mais recentes são mantidas.</p>
+            <p class="card-subtitle">A copy of the current files is saved automatically before every change. The 5 most recent are kept.</p>
           </div>
         </div>
         <div id="change-history-timeline" class="history-list"></div>
       </section>
 
       <section class="card">
-        <div class="card-header"><h3 class="card-title">Ações rápidas</h3></div>
+        <div class="card-header"><h3 class="card-title">Quick Actions</h3></div>
         <div class="card-actions">
-          <button id="btn-optimize-fps" class="btn btn--primary">Otimizar FPS</button>
-          <button id="btn-unlock-all" class="btn btn--secondary">Destravar todos os arquivos</button>
-          <button id="btn-refresh-status" class="btn btn--secondary">Atualizar status</button>
+          <button id="btn-optimize-fps" class="btn btn--primary">Optimize FPS</button>
+          <button id="btn-unlock-all" class="btn btn--secondary">Unlock All Files</button>
+          <button id="btn-refresh-status" class="btn btn--secondary">Refresh Status</button>
         </div>
       </section>
     </div>`;
@@ -189,21 +189,21 @@ async function renderStatusStrip({ account, processes, clientRunning, gameRunnin
   const nameEl = byId('strip-account-name');
   if (!nameEl) return;
 
-  nameEl.textContent = account ? account.name : 'Nenhuma conta logada';
-  nameEl.title = account && !account.live ? 'O client está fechado: mostrando a última conta que entrou.' : '';
+  nameEl.textContent = account ? account.name : 'No account logged in';
+  nameEl.title = account && !account.live ? 'The client is closed: showing the last account that logged in.' : '';
 
   const levelEl = byId('strip-account-level');
-  levelEl.textContent = account?.summonerLevel ? `NÍVEL ${account.summonerLevel}` : '';
+  levelEl.textContent = account?.summonerLevel ? `LEVEL ${account.summonerLevel}` : '';
   levelEl.style.display = account?.summonerLevel ? 'inline-block' : 'none';
 
   const clientBadge = byId('strip-client-badge');
   clientBadge.className = `status-badge status-badge--${clientRunning || gameRunning ? 'online' : 'offline'}`;
-  clientBadge.textContent = gameRunning ? 'Em partida' : clientRunning ? 'Aberto' : 'Fechado';
+  clientBadge.textContent = gameRunning ? 'In Game' : clientRunning ? 'Online' : 'Offline';
   byId('strip-client-detail').textContent = (processes ?? []).join(', ');
 
   const lockBadge = byId('strip-lock-badge');
   lockBadge.className = `status-badge status-badge--${persistedLocked ? 'locked' : 'offline'}`;
-  lockBadge.textContent = persistedLocked === null ? '—' : persistedLocked ? 'Travado (somente leitura)' : 'Destravado';
+  lockBadge.textContent = persistedLocked === null ? '—' : persistedLocked ? 'Locked (read-only)' : 'Unlocked';
   byId('btn-toggle-lock').style.display = persistedLocked === null ? 'none' : 'inline-flex';
 
   const regalia = await api().client.getRegalia();
@@ -225,7 +225,7 @@ async function refreshFileStatus() {
   try {
     const status = await api().paths.fileStatus();
     const item = (ok, label) =>
-      `<span style="color: var(--accent-${ok ? 'emerald' : 'rose'}); font-weight: 500;" title="${ok ? 'Encontrado' : 'Não encontrado'}">${label}</span>`;
+      `<span style="color: var(--accent-${ok ? 'emerald' : 'rose'}); font-weight: 500;" title="${ok ? 'Found' : 'Not found'}">${label}</span>`;
     list.innerHTML = [
       item(status.gameCfg, 'game.cfg'),
       item(status.persistedSettings, 'PersistedSettings'),
@@ -250,7 +250,7 @@ async function refreshActiveGameSettings() {
     set('summary-windowmode', WINDOW_MODES[general.WindowMode] ?? '—');
     set(
       'summary-volume',
-      volume.MasterVolume === undefined ? '—' : volume.MasterMute === '1' ? 'Mudo' : `${Math.round(Number(volume.MasterVolume) * 100)}%`,
+      volume.MasterVolume === undefined ? '—' : volume.MasterMute === '1' ? 'Muted' : `${Math.round(Number(volume.MasterVolume) * 100)}%`,
     );
   } catch {
     ['summary-resolution', 'summary-windowmode', 'summary-volume'].forEach((id) => set(id, '—'));
@@ -276,7 +276,7 @@ async function refreshProfiles() {
   try {
     profiles = await api().profiles.list();
   } catch (err) {
-    grid.innerHTML = `<p class="text-sm text-rose" style="grid-column: 1 / -1;">Não foi possível carregar os perfis: ${escapeHtml(errorMessage(err))}</p>`;
+    grid.innerHTML = `<p class="text-sm text-rose" style="grid-column: 1 / -1;">Could not load profiles: ${escapeHtml(errorMessage(err))}</p>`;
     return;
   }
   if (!mounted) return;
@@ -288,7 +288,7 @@ async function refreshProfiles() {
   const custom = profiles.filter((p) => !isSlotProfile(p.name));
   grid.innerHTML = custom.length
     ? custom.map((profile) => profileCardHtml(profile, mappings, account)).join('')
-    : '<p class="empty-hint" style="grid-column: 1 / -1;">Nenhum perfil ainda. Use "Salvar atual" para criar um.</p>';
+    : '<p class="empty-hint" style="grid-column: 1 / -1;">No profiles yet. Use "Save Current" to create one.</p>';
   attachImageFallbacks(grid);
 }
 
@@ -335,7 +335,7 @@ function renderSlots(profiles) {
     const applyButton = document.querySelector(`[data-slot-apply="${i + 1}"]`);
     if (!status || !applyButton) return;
     const profile = profiles.find((p) => p.name === slotName);
-    status.textContent = profile ? `Salvo em ${formatDate(profile.updatedAt ?? profile.createdAt)}` : 'Vazio';
+    status.textContent = profile ? `Saved ${formatDate(profile.updatedAt ?? profile.createdAt)}` : 'Empty';
     applyButton.style.display = profile ? 'inline-flex' : 'none';
   });
 }
@@ -345,14 +345,14 @@ function profileCardHtml(profile, mappings, account) {
   const name = escapeHtml(profile.name);
   const linkedAccount = Object.entries(mappings).find(([, profileName]) => profileName === profile.name)?.[0];
   const subtitle = linkedAccount
-    ? `Vinculado a ${escapeHtml(linkedAccount)}`
+    ? `Linked to ${escapeHtml(linkedAccount)}`
     : meta.summonerName && meta.summonerName !== profile.name
-      ? `Salvo de ${escapeHtml(meta.summonerName)}`
-      : 'Perfil personalizado';
+      ? `Saved from ${escapeHtml(meta.summonerName)}`
+      : 'Custom profile';
 
   const linkControl = linkedAccount
-    ? `<span class="lol-profile-card__linked">Vinculado <button type="button" class="lol-profile-card__unlink" data-unlink="${name}" title="Desvincular" aria-label="Desvincular ${name}">×</button></span>`
-    : `<button class="btn btn--secondary btn--sm" data-link="${name}" ${account ? '' : 'disabled title="Entre no client do League para vincular este perfil à sua conta"'}>Vincular à conta</button>`;
+    ? `<span class="lol-profile-card__linked">Linked <button type="button" class="lol-profile-card__unlink" data-unlink="${name}" title="Unlink" aria-label="Unlink ${name}">×</button></span>`
+    : `<button class="btn btn--secondary btn--sm" data-link="${name}" ${account ? '' : 'disabled title="Log in to the League client to link this profile to your account"'}>Link to Account</button>`;
 
   return `
     <div class="profile-card lol-profile-card">
@@ -371,16 +371,16 @@ function profileCardHtml(profile, mappings, account) {
       </div>
       <div class="lol-profile-card__actions">
         ${linkControl}
-        <button class="btn btn--primary btn--sm" data-apply="${name}">Aplicar</button>
+        <button class="btn btn--primary btn--sm" data-apply="${name}">Apply</button>
       </div>
     </div>`;
 }
 
 async function applyProfileByName(name, button) {
-  await withBusyButtons([button], 'Aplicando…', async () => {
+  await withBusyButtons([button], 'Applying…', async () => {
     try {
       await api().profiles.applyAll(await api().profiles.load(name));
-      toast(`"${name}" aplicado`, 'success');
+      toast(`Applied "${name}"`, 'success');
       await Promise.allSettled([refreshActiveGameSettings(), refreshHistory()]);
     } catch (err) {
       toast(errorMessage(err), 'error');
@@ -395,7 +395,7 @@ function refreshHistory() {
   if (!container) return;
   const history = api().history.list();
   if (!history.length) {
-    container.innerHTML = '<p class="empty-hint">Nenhum backup ainda.</p>';
+    container.innerHTML = '<p class="empty-hint">No backups yet.</p>';
     return;
   }
   container.innerHTML = history
@@ -406,7 +406,7 @@ function refreshHistory() {
           <span class="history-row__title">${escapeHtml(entry.description)}</span>
           <span class="history-row__date">${escapeHtml(formatDate(entry.timestamp))}</span>
         </div>
-        <button class="btn btn--secondary btn--sm" data-rollback="${escapeHtml(entry.timestamp)}">Restaurar</button>
+        <button class="btn btn--secondary btn--sm" data-rollback="${escapeHtml(entry.timestamp)}">Restore</button>
       </div>`,
     )
     .join('');
@@ -416,14 +416,14 @@ function refreshHistory() {
 
 async function optimizeFps(button) {
   const confirmed = await confirmAction({
-    title: 'Otimizar FPS',
+    title: 'Optimize FPS',
     message:
-      'Desligar sombras, anti-aliasing e animações do HUD, e colocar a qualidade de efeitos, ambiente e personagens no mínimo?\n\nUm backup é salvo antes, e você pode restaurá-lo pela seção Backups.',
-    confirmText: 'Otimizar',
+      'Turn off shadows, anti-aliasing and HUD animations, and set effects, environment and character quality to the minimum?\n\nA backup is saved first, and you can restore it from the Backups section.',
+    confirmText: 'Optimize',
   });
   if (!confirmed) return;
 
-  await withBusyButtons([button], 'Otimizando…', async () => {
+  await withBusyButtons([button], 'Optimizing…', async () => {
     try {
       await api().status.assertGameClosed();
       const ini = (await api().lol.readGameCfg()).data;
@@ -438,17 +438,17 @@ async function optimizeFps(button) {
         }
       }
       if (!changed) {
-        toast('O game.cfg ainda não tem as opções de gráficos. Abra as opções dentro do jogo uma vez e tente de novo.', 'info');
+        toast('game.cfg has no graphics options yet. Open the in-game options once and try again.', 'info');
         return;
       }
 
-      await api().history.saveSnapshot('Antes de otimizar o FPS');
+      await api().history.saveSnapshot('Before optimizing FPS');
       await api().lol.updateSettings(ini);
       if (persisted?.files) await api().lol.updateKeybindings(persisted);
-      toast(`${changed} opções de gráficos ajustadas para mais FPS`, 'success');
+      toast(`${changed} graphics options tuned for more FPS`, 'success');
       await Promise.allSettled([refreshActiveGameSettings(), refreshHistory()]);
     } catch (err) {
-      toast(`Não foi possível otimizar: ${errorMessage(err)}`, 'error');
+      toast(`Could not optimize: ${errorMessage(err)}`, 'error');
     }
   });
 }
@@ -460,10 +460,10 @@ async function unlockAllFiles() {
     for (const kind of ['gameCfg', 'persistedSettings', 'clientSettings']) {
       if (status[kind]) await api().lock.removeReadOnly(paths[kind]);
     }
-    toast('Todos os arquivos de configuração podem ser alterados de novo', 'success');
+    toast('All config files can be changed again', 'success');
     await window.refreshStatus();
   } catch (err) {
-    toast(`Não foi possível destravar os arquivos: ${errorMessage(err)}`, 'error');
+    toast(`Could not unlock the files: ${errorMessage(err)}`, 'error');
   }
 }
 
@@ -471,16 +471,16 @@ async function saveCurrentAs(name) {
   const exists = (await api().profiles.list()).some((p) => p.name.toLowerCase() === name.toLowerCase());
   if (exists) {
     const overwrite = await confirmAction({
-      title: 'Substituir perfil?',
-      message: `Já existe um perfil chamado "${name}". Substituir pelas configurações atuais?`,
-      confirmText: 'Substituir',
+      title: 'Overwrite profile?',
+      message: `A profile named "${name}" already exists. Replace it with the current settings?`,
+      confirmText: 'Overwrite',
       danger: true,
     });
     if (!overwrite) return;
   }
   try {
     await api().profiles.quickSave(name);
-    toast(`Perfil "${name}" salvo`, 'success');
+    toast(`Profile "${name}" saved`, 'success');
     await refreshProfiles();
   } catch (err) {
     toast(errorMessage(err), 'error');
@@ -489,15 +489,15 @@ async function saveCurrentAs(name) {
 
 function openSaveModal() {
   const modal = window.openModal({
-    title: 'Salvar configurações atuais',
+    title: 'Save Current Settings',
     body: `
       <div class="form-group" style="margin-bottom: 0;">
-        <label for="save-profile-name">Nome do perfil</label>
-        <input type="text" id="save-profile-name" class="input-control w-full" maxlength="100" placeholder="ex.: Ranqueada" style="max-width: 100%;" value="${escapeHtml(window.appState?.account?.name ?? '')}" />
+        <label for="save-profile-name">Profile name</label>
+        <input type="text" id="save-profile-name" class="input-control w-full" maxlength="100" placeholder="e.g. Ranked" style="max-width: 100%;" value="${escapeHtml(window.appState?.account?.name ?? '')}" />
       </div>`,
     footer: `
-      <button class="btn btn--secondary" data-action="cancel">Cancelar</button>
-      <button class="btn btn--primary" data-action="save">Salvar</button>`,
+      <button class="btn btn--secondary" data-action="cancel">Cancel</button>
+      <button class="btn btn--primary" data-action="save">Save</button>`,
   });
 
   const input = modal.body.querySelector('input');
@@ -507,7 +507,7 @@ function openSaveModal() {
   const submit = () => {
     const name = input.value.trim();
     if (!name) {
-      toast('O nome do perfil não pode ficar vazio', 'error');
+      toast('Profile name cannot be empty', 'error');
       input.focus();
       return;
     }
@@ -533,30 +533,30 @@ function bindHandlers() {
 
     if (link !== undefined) {
       const account = window.appState?.account;
-      if (!account) return toast('Entre no client do League primeiro', 'error');
+      if (!account) return toast('Log in to the League client first', 'error');
       const mappings = readJson(KEYS.accountMappings, {});
       mappings[account.name] = link;
       writeJson(KEYS.accountMappings, mappings);
       // The profile is applied on this account's next login, not right away.
       writeText(KEYS.lastAutoApplied, `${account.name}:${link}`);
-      toast(`"${link}" será aplicado sempre que ${account.name} entrar`, 'success');
+      toast(`"${link}" will be applied whenever ${account.name} logs in`, 'success');
       return refreshProfiles();
     }
 
     if (unlink !== undefined) {
       const mappings = Object.fromEntries(Object.entries(readJson(KEYS.accountMappings, {})).filter(([, name]) => name !== unlink));
       writeJson(KEYS.accountMappings, mappings);
-      toast(`"${unlink}" não está mais vinculado a uma conta`, 'info');
+      toast(`"${unlink}" is no longer linked to an account`, 'info');
       return refreshProfiles();
     }
 
     if (apply !== undefined) return applyProfileByName(apply, target);
 
     if (slotSave !== undefined) {
-      return withBusyButtons([target], 'Salvando…', async () => {
+      return withBusyButtons([target], 'Saving…', async () => {
         try {
           await api().profiles.quickSave(`Slot_${slotSave}`);
-          toast(`Configurações atuais salvas no Slot ${slotSave}`, 'success');
+          toast(`Current settings saved to Slot ${slotSave}`, 'success');
           await refreshProfiles();
         } catch (err) {
           toast(errorMessage(err), 'error');
@@ -568,14 +568,14 @@ function bindHandlers() {
 
     if (rollback !== undefined) {
       const confirmed = await confirmAction({
-        title: 'Restaurar backup',
-        message: 'Voltar suas configurações para este backup? As configurações atuais recebem um backup antes.',
-        confirmText: 'Restaurar',
+        title: 'Restore backup',
+        message: 'Restore your settings to this backup? The current settings are backed up first.',
+        confirmText: 'Restore',
       });
       if (!confirmed) return;
       try {
         await api().history.rollback(rollback);
-        toast('Backup restaurado', 'success');
+        toast('Backup restored', 'success');
         await Promise.allSettled([refreshActiveGameSettings(), refreshHistory()]);
       } catch (err) {
         toast(errorMessage(err), 'error');
@@ -591,6 +591,6 @@ function bindHandlers() {
   byId('btn-refresh-status').addEventListener('click', async () => {
     await Promise.allSettled([window.refreshStatus(), refreshFileStatus(), refreshActiveGameSettings(), refreshProfiles()]);
     refreshHistory();
-    toast('Status atualizado', 'success');
+    toast('Status refreshed', 'success');
   });
 }

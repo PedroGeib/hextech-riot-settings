@@ -8,38 +8,38 @@ import { confirmAction, errorMessage, toast, withBusyButtons } from '../lib/ui.j
 
 const TARGET_TABS = [
   ['gameCfg', 'game.cfg'],
-  ['persistedSettings', 'Atalhos'],
+  ['persistedSettings', 'Keybindings'],
   ['clientSettings', 'Client'],
 ];
 
 function formatDate(value) {
   const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? String(value ?? '') : date.toLocaleString('pt-BR');
+  return Number.isNaN(date.getTime()) ? String(value ?? '') : date.toLocaleString();
 }
 
 export function render() {
   return `
     <div id="profiles-view" class="view-container">
       <header class="page-header">
-        <h1>Perfis</h1>
-        <p class="subtitle">Salve, aplique e edite cópias das suas configurações</p>
+        <h1>Profiles</h1>
+        <p class="subtitle">Save, apply and edit snapshots of your settings</p>
       </header>
 
       <section class="card">
         <div class="card-header">
           <div>
-            <h3 class="card-title">Novo perfil</h3>
-            <p class="card-subtitle">Guarda o game.cfg, o PersistedSettings.json e o LeagueClientSettings.yaml como estão agora.</p>
+            <h3 class="card-title">New Profile</h3>
+            <p class="card-subtitle">Stores game.cfg, PersistedSettings.json and LeagueClientSettings.yaml as they are now.</p>
           </div>
         </div>
         <form id="save-profile-form" class="inline-form">
-          <input type="text" id="new-profile-name" class="input-control input-control--grow" maxlength="100" aria-label="Nome do perfil" placeholder="ex.: FPS máximo" />
-          <button type="submit" class="btn btn--primary">Salvar perfil</button>
+          <input type="text" id="new-profile-name" class="input-control input-control--grow" maxlength="100" aria-label="Profile name" placeholder="e.g. Max FPS" />
+          <button type="submit" class="btn btn--primary">Save Profile</button>
         </form>
       </section>
 
       <section class="card">
-        <div class="card-header"><h3 class="card-title">Perfis salvos</h3></div>
+        <div class="card-header"><h3 class="card-title">Saved Profiles</h3></div>
         <div id="profiles-list" class="profile-list">
           <div class="skeleton skeleton--card" style="height: 72px;"></div>
         </div>
@@ -51,9 +51,9 @@ function profileRowHtml(profile) {
   const meta = profile.meta ?? {};
   const name = escapeHtml(profile.name);
   const details = [
-    profile.updatedAt ? `Atualizado em ${formatDate(profile.updatedAt)}` : `Criado em ${formatDate(profile.createdAt)}`,
-    meta.summonerLevel ? `Nível ${meta.summonerLevel}` : null,
-    meta.summonerName && meta.summonerName !== profile.name ? `de ${meta.summonerName}` : null,
+    profile.updatedAt ? `Updated ${formatDate(profile.updatedAt)}` : `Created ${formatDate(profile.createdAt)}`,
+    meta.summonerLevel ? `Level ${meta.summonerLevel}` : null,
+    meta.summonerName && meta.summonerName !== profile.name ? `from ${meta.summonerName}` : null,
   ]
     .filter(Boolean)
     .map(escapeHtml)
@@ -71,9 +71,9 @@ function profileRowHtml(profile) {
         </div>
       </div>
       <div class="profile-row__actions">
-        <button class="btn btn--secondary btn--sm" data-edit="${name}">Editar</button>
-        <button class="btn btn--secondary btn--sm" data-apply="${name}">Aplicar</button>
-        <button class="btn btn--danger btn--sm" data-delete="${name}">Excluir</button>
+        <button class="btn btn--secondary btn--sm" data-edit="${name}">Edit</button>
+        <button class="btn btn--secondary btn--sm" data-apply="${name}">Apply</button>
+        <button class="btn btn--danger btn--sm" data-delete="${name}">Delete</button>
       </div>
     </div>`;
 }
@@ -94,10 +94,10 @@ export function mount() {
       if (!root.isConnected) return;
       list.innerHTML = profiles.length
         ? profiles.map((profile) => profileRowHtml(profile)).join('')
-        : '<div class="empty-state"><p>Nenhum perfil salvo ainda.</p></div>';
+        : '<div class="empty-state"><p>No saved profiles yet.</p></div>';
       attachImageFallbacks(list);
     } catch (err) {
-      list.innerHTML = `<div class="empty-state"><h3>Não foi possível carregar os perfis</h3><p>${escapeHtml(errorMessage(err))}</p></div>`;
+      list.innerHTML = `<div class="empty-state"><h3>Could not load profiles</h3><p>${escapeHtml(errorMessage(err))}</p></div>`;
     }
   }
 
@@ -105,7 +105,7 @@ export function mount() {
     event.preventDefault();
     const name = nameInput.value.trim();
     if (!name) {
-      toast('Digite um nome para o perfil', 'error');
+      toast('Enter a profile name', 'error');
       nameInput.focus();
       return;
     }
@@ -113,18 +113,18 @@ export function mount() {
     const exists = (await api.profiles.list()).some((p) => p.name.toLowerCase() === name.toLowerCase());
     if (exists) {
       const overwrite = await confirmAction({
-        title: 'Substituir perfil?',
-        message: `Já existe um perfil chamado "${name}". Substituir pelas configurações atuais?`,
-        confirmText: 'Substituir',
+        title: 'Overwrite profile?',
+        message: `A profile named "${name}" already exists. Replace it with the current settings?`,
+        confirmText: 'Overwrite',
         danger: true,
       });
       if (!overwrite) return;
     }
 
-    await withBusyButtons([form.querySelector('button[type="submit"]')], 'Salvando…', async () => {
+    await withBusyButtons([form.querySelector('button[type="submit"]')], 'Saving…', async () => {
       try {
         await api.profiles.quickSave(name);
-        toast(`Perfil "${name}" salvo`, 'success');
+        toast(`Profile "${name}" saved`, 'success');
         await loadProfiles();
       } catch (err) {
         toast(errorMessage(err), 'error');
@@ -141,15 +141,15 @@ export function mount() {
 
     if (apply !== undefined) {
       const confirmed = await confirmAction({
-        title: 'Aplicar perfil',
-        message: `Aplicar "${apply}"? Suas configurações atuais recebem um backup antes, que pode ser restaurado pelo Painel.`,
-        confirmText: 'Aplicar',
+        title: 'Apply profile',
+        message: `Apply "${apply}"? Your current settings are backed up first and can be restored from the Dashboard.`,
+        confirmText: 'Apply',
       });
       if (!confirmed) return;
-      return withBusyButtons([button], 'Aplicando…', async () => {
+      return withBusyButtons([button], 'Applying…', async () => {
         try {
           const { applied } = await api.profiles.applyAll(await api.profiles.load(apply));
-          toast(`"${apply}" aplicado em ${applied.join(', ') || 'nenhum arquivo'}`, 'success');
+          toast(`Applied "${apply}" to ${applied.join(', ') || 'no files'}`, 'success');
         } catch (err) {
           toast(errorMessage(err), 'error');
         }
@@ -158,9 +158,9 @@ export function mount() {
 
     if (remove !== undefined) {
       const confirmed = await confirmAction({
-        title: 'Excluir perfil',
-        message: `Excluir "${remove}"? Isso não pode ser desfeito.`,
-        confirmText: 'Excluir',
+        title: 'Delete profile',
+        message: `Delete "${remove}"? This cannot be undone.`,
+        confirmText: 'Delete',
         danger: true,
       });
       if (!confirmed) return;
@@ -168,7 +168,7 @@ export function mount() {
         await api.profiles.delete(remove);
         const mappings = Object.fromEntries(Object.entries(readJson(KEYS.accountMappings, {})).filter(([, name]) => name !== remove));
         writeJson(KEYS.accountMappings, mappings);
-        toast(`Perfil "${remove}" excluído`, 'success');
+        toast(`Profile "${remove}" deleted`, 'success');
         await loadProfiles();
       } catch (err) {
         toast(errorMessage(err), 'error');
@@ -189,20 +189,20 @@ export function mount() {
     let active = TARGET_TABS[0][0];
 
     const modal = window.openModal({
-      title: `Editar perfil: ${profile.name}`,
+      title: `Edit profile: ${profile.name}`,
       wide: true,
       body: `
         <div role="tablist" class="tab-bar">
           ${TARGET_TABS.map(([key, label]) => `<button type="button" role="tab" class="btn btn--sm btn--secondary" data-tab="${key}">${escapeHtml(label)}</button>`).join('')}
         </div>
-        <p class="modal-hint">Edite os valores salvos em JSON. Só este perfil muda; os arquivos do jogo ficam intactos até você aplicá-lo.</p>
-        <textarea class="code-editor" spellcheck="false" aria-label="Valores do perfil em JSON"></textarea>`,
+        <p class="modal-hint">Edit the saved values as JSON. Only this profile changes; the game files stay untouched until you apply it.</p>
+        <textarea class="code-editor" spellcheck="false" aria-label="Profile values as JSON"></textarea>`,
       footer: `
         <div class="modal-footer__split">
-          <button class="btn btn--danger" data-action="restore" ${profile.originalTargets ? '' : 'disabled title="Este perfil não tem uma cópia original"'}>Restaurar original</button>
+          <button class="btn btn--danger" data-action="restore" ${profile.originalTargets ? '' : 'disabled title="This profile has no original copy"'}>Restore Original</button>
           <div class="card-actions">
-            <button class="btn btn--secondary" data-action="cancel">Cancelar</button>
-            <button class="btn btn--primary" data-action="save">Salvar alterações</button>
+            <button class="btn btn--secondary" data-action="cancel">Cancel</button>
+            <button class="btn btn--primary" data-action="save">Save Changes</button>
           </div>
         </div>`,
     });
@@ -216,7 +216,7 @@ export function mount() {
         return true;
       } catch (err) {
         const label = TARGET_TABS.find(([key]) => key === active)[1];
-        toast(`JSON inválido em ${label}: ${err.message}`, 'error');
+        toast(`Invalid JSON in ${label}: ${err.message}`, 'error');
         return false;
       }
     };
@@ -248,25 +248,25 @@ export function mount() {
         try {
           await api.profiles.save({ ...profile, targets });
           modal.close();
-          toast('Alterações do perfil salvas', 'success');
+          toast('Profile changes saved', 'success');
           await loadProfiles();
         } catch (err) {
-          toast(`Não foi possível salvar: ${errorMessage(err)}`, 'error');
+          toast(`Could not save: ${errorMessage(err)}`, 'error');
         }
       }
 
       if (action === 'restore') {
         modal.close();
         const confirmed = await confirmAction({
-          title: 'Restaurar original?',
-          message: `Descartar todas as edições de "${profile.name}" e voltar às configurações de quando ele foi salvo?`,
-          confirmText: 'Restaurar',
+          title: 'Restore original?',
+          message: `Discard all edits to "${profile.name}" and go back to the settings from when it was saved?`,
+          confirmText: 'Restore',
           danger: true,
         });
         if (!confirmed) return;
         try {
           await api.profiles.restoreOriginal(profile.name);
-          toast('Perfil restaurado para a cópia original', 'success');
+          toast('Profile restored to its original copy', 'success');
           await loadProfiles();
         } catch (err) {
           toast(errorMessage(err), 'error');

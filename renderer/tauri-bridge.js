@@ -57,14 +57,14 @@ async function findInstallRoot() {
   if (custom) {
     const found = await findInstallIn(custom);
     if (found) return found;
-    throw new Error(`"${custom}" não é uma instalação do League of Legends. Corrija o caminho em Configurações.`);
+    throw new Error(`"${custom}" is not a League of Legends installation. Fix the path in App Settings.`);
   }
 
   const home = await invoke('get_home_dir');
   for (const root of [...DEFAULT_INSTALL_ROOTS, joinPath(home, 'Riot Games', 'League of Legends')]) {
     if (await looksLikeInstall(root)) return root;
   }
-  throw new Error('Instalação do League of Legends não encontrada. Informe o caminho em Configurações.');
+  throw new Error('League of Legends installation not found. Set the path in App Settings.');
 }
 
 let pathsPromise = null;
@@ -102,7 +102,7 @@ async function processSnapshot() {
 
 async function assertGameClosed() {
   if ((await processSnapshot()).gameRunning) {
-    throw new Error('Há uma partida de League of Legends em andamento. Feche o jogo primeiro, senão ele sobrescreve suas configurações ao sair.');
+    throw new Error('A League of Legends match is running. Close the game first, or it will overwrite your settings when it exits.');
   }
 }
 
@@ -130,12 +130,12 @@ function parseJson(raw, label) {
   try {
     return JSON.parse(raw);
   } catch (err) {
-    throw new Error(`${label} não é um JSON válido: ${err.message}`);
+    throw new Error(`${label} is not valid JSON: ${err.message}`);
   }
 }
 
 function yaml() {
-  if (!window.jsyaml) throw new Error('Não foi possível carregar o suporte a YAML (vendor/js-yaml.min.js ausente).');
+  if (!window.jsyaml) throw new Error('YAML support could not be loaded (vendor/js-yaml.min.js is missing).');
   return window.jsyaml;
 }
 
@@ -175,7 +175,7 @@ const FORMATS = {
 
 function formatFor(kind) {
   const format = FORMATS[kind];
-  if (!format) throw new Error(`Arquivo de configuração desconhecido: "${kind}"`);
+  if (!format) throw new Error(`Unknown config file "${kind}"`);
   return format;
 }
 
@@ -309,13 +309,13 @@ function findProfile(profiles, name) {
 
 async function loadProfile(name) {
   const profile = findProfile(await readProfiles(), name);
-  if (!profile) throw new Error(`Perfil "${name}" não encontrado`);
+  if (!profile) throw new Error(`Profile "${name}" not found`);
   return profile;
 }
 
 async function saveProfile(profile) {
   const name = String(profile?.name ?? '').trim();
-  if (!name) throw new Error('O nome do perfil não pode ficar vazio');
+  if (!name) throw new Error('Profile name cannot be empty');
 
   const profiles = await readProfiles();
   let fileName = profile.fileName ?? findProfile(profiles, name)?.fileName;
@@ -333,11 +333,11 @@ async function saveProfile(profile) {
 
 async function quickSaveProfile(name) {
   const trimmed = String(name ?? '').trim();
-  if (!trimmed) throw new Error('O nome do perfil não pode ficar vazio');
+  if (!trimmed) throw new Error('Profile name cannot be empty');
 
   const targets = await captureTargets();
   if (!targets.gameCfg && !targets.persistedSettings && !targets.clientSettings) {
-    throw new Error('Nenhum arquivo de configuração pôde ser lido, então nada foi salvo.');
+    throw new Error('None of the config files could be read, so nothing was saved.');
   }
 
   const [account, existing] = await Promise.all([getCurrentAccount(), readProfiles().then((p) => findProfile(p, trimmed))]);
@@ -362,7 +362,7 @@ async function quickSaveProfile(name) {
 async function applyProfile(profile, { skipSnapshot = false } = {}) {
   await assertGameClosed();
   const targets = profile?.targets ?? {};
-  if (!skipSnapshot) await saveSnapshot(`Antes de aplicar "${profile?.name ?? 'perfil'}"`);
+  if (!skipSnapshot) await saveSnapshot(`Before applying "${profile?.name ?? 'profile'}"`);
 
   const applied = [];
   if (targets.gameCfg) {
@@ -404,7 +404,7 @@ window.api = {
     setInstallPath: async (folder) => {
       const trimmed = String(folder ?? '').trim();
       if (trimmed && !(await findInstallIn(trimmed))) {
-        throw new Error(`"${trimmed}" não contém uma instalação do League of Legends`);
+        throw new Error(`"${trimmed}" does not contain a League of Legends installation`);
       }
       writeText(KEYS.installPath, trimmed || null);
       pathsPromise = null;
@@ -464,7 +464,7 @@ window.api = {
     applyAll: applyProfile,
     restoreOriginal: async (name) => {
       const profile = await loadProfile(name);
-      if (!profile.originalTargets) throw new Error('Este perfil não tem uma cópia original para restaurar.');
+      if (!profile.originalTargets) throw new Error('This profile has no original copy to restore.');
       return saveProfile({ ...profile, targets: structuredClone(profile.originalTargets) });
     },
     delete: async (name) => {
@@ -486,9 +486,9 @@ window.api = {
     list: () => readJson(KEYS.history, []),
     rollback: async (timestamp) => {
       const snapshot = readJson(KEYS.history, []).find((h) => h.timestamp === timestamp);
-      if (!snapshot) throw new Error('Esse backup não existe mais.');
+      if (!snapshot) throw new Error('That backup no longer exists.');
       await assertGameClosed();
-      await saveSnapshot(`Antes de restaurar o backup de ${new Date(timestamp).toLocaleString('pt-BR')}`);
+      await saveSnapshot(`Before restoring the backup from ${new Date(timestamp).toLocaleString()}`);
       return applyProfile({ name: snapshot.description, targets: snapshot.targets }, { skipSnapshot: true });
     },
   },
@@ -503,7 +503,6 @@ window.api = {
     setAutostart: (enabled) => invoke('set_autostart', { enabled }),
     isAutostartEnabled: () => invoke('is_autostart_enabled'),
     setGlobalHotkeys: (enabled) => invoke('set_global_hotkeys', { enabled }),
-    setCloseToTray: (enabled) => invoke('set_close_to_tray', { enabled }),
     quit: () => invoke('quit_app'),
   },
 };

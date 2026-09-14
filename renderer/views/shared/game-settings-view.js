@@ -20,28 +20,28 @@ const SYNC_ICON = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" s
 const COPY_ICON = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>`;
 
 const KEYMAP_ACTIONS = [
-  ['evtCastSpell1', 'Habilidade 1 (Q)'],
-  ['evtCastSpell2', 'Habilidade 2 (W)'],
-  ['evtCastSpell3', 'Habilidade 3 (E)'],
-  ['evtCastSpell4', 'Habilidade 4 (R)'],
-  ['evtCastAvatarSpell1', 'Feitiço de invocador 1 (D)'],
-  ['evtCastAvatarSpell2', 'Feitiço de invocador 2 (F)'],
-  ['evtUseItem1', 'Usar item 1'],
-  ['evtUseItem2', 'Usar item 2'],
-  ['evtUseItem3', 'Usar item 3'],
-  ['evtUseItem4', 'Usar item 4'],
-  ['evtUseItem5', 'Usar item 5'],
-  ['evtUseItem6', 'Usar item 6'],
-  ['evtUseVisionItem', 'Usar sentinela'],
-  ['evtCameraSnap', 'Centralizar câmera'],
-  ['evtPlayerStopPosition', 'Parar ação'],
-  ['evtPlayerAttackMove', 'Ataque em movimento'],
+  ['evtCastSpell1', 'Ability 1 (Q)'],
+  ['evtCastSpell2', 'Ability 2 (W)'],
+  ['evtCastSpell3', 'Ability 3 (E)'],
+  ['evtCastSpell4', 'Ability 4 (R)'],
+  ['evtCastAvatarSpell1', 'Summoner Spell 1 (D)'],
+  ['evtCastAvatarSpell2', 'Summoner Spell 2 (F)'],
+  ['evtUseItem1', 'Use Item 1'],
+  ['evtUseItem2', 'Use Item 2'],
+  ['evtUseItem3', 'Use Item 3'],
+  ['evtUseItem4', 'Use Item 4'],
+  ['evtUseItem5', 'Use Item 5'],
+  ['evtUseItem6', 'Use Item 6'],
+  ['evtUseVisionItem', 'Use Ward'],
+  ['evtCameraSnap', 'Center Camera'],
+  ['evtPlayerStopPosition', 'Stop Action'],
+  ['evtPlayerAttackMove', 'Attack Move'],
 ];
 const KEYMAP_ROWS = [['1', '2', '3', '4', '5', '6', '7'], ['Q', 'W', 'E', 'R'], ['A', 'S', 'D', 'F'], ['Space']];
 const HIGHLIGHTED_KEYS = new Set(['Q', 'W', 'E', 'R', 'D', 'F']);
 
 const actionLabel = (name) => KEYMAP_ACTIONS.find(([id]) => id === name)?.[1] ?? name;
-const keyLabel = (key) => (key === 'Space' ? 'Espaço' : key);
+const keyLabel = (key) => (key === 'Space' ? 'Space' : key);
 const controlKeys = (control) => control.keys ?? [control.key];
 
 function iniValue(ini, key) {
@@ -57,7 +57,7 @@ function displayValue(control, value) {
     case 'range':
       return Number(value).toFixed(2);
     case 'toggle':
-      return isChecked(value) ? 'LIGADO' : 'DESLIGADO';
+      return isChecked(value) ? 'ON' : 'OFF';
     case 'select':
       return control.options.find((o) => o.value === String(value))?.label ?? String(value);
     default:
@@ -68,9 +68,9 @@ function displayValue(control, value) {
 function compareBadgeHtml(text, different, copyAttribute) {
   return `
     <div class="comparison-badge">
-      <span class="comparison-badge__label">Perfil</span>
+      <span class="comparison-badge__label">Profile</span>
       <span class="comparison-badge__value ${different ? 'comparison-badge__value--diff' : ''}">${escapeHtml(text)}</span>
-      ${different ? `<button type="button" class="comparison-badge__copy" ${copyAttribute} title="Usar este valor" aria-label="Usar este valor">${COPY_ICON}</button>` : ''}
+      ${different ? `<button type="button" class="comparison-badge__copy" ${copyAttribute} title="Use this value" aria-label="Use this value">${COPY_ICON}</button>` : ''}
     </div>`;
 }
 
@@ -82,9 +82,9 @@ function controlInputHtml(control, index) {
     case 'resolution':
       return `
         <div class="flex items-center gap-2">
-          <input type="number" min="1" step="1" class="input-control" style="width: 90px; text-align: center;" placeholder="Largura" aria-label="Largura" ${attrs(0)} />
+          <input type="number" min="1" step="1" class="input-control" style="width: 90px; text-align: center;" placeholder="Width" aria-label="Width" ${attrs(0)} />
           <span class="text-muted">x</span>
-          <input type="number" min="1" step="1" class="input-control" style="width: 90px; text-align: center;" placeholder="Altura" aria-label="Altura" ${attrs(1)} />
+          <input type="number" min="1" step="1" class="input-control" style="width: 90px; text-align: center;" placeholder="Height" aria-label="Height" ${attrs(1)} />
         </div>`;
     case 'select':
       return `
@@ -146,8 +146,8 @@ function keymapperHtml() {
     <div class="card">
       <div class="card-header">
         <div>
-          <h3 class="card-title">Mapeador de teclas</h3>
-          <p class="card-subtitle">Clique em uma tecla para ver o que ela faz e vinculá-la a outra ação.</p>
+          <h3 class="card-title">Keymapper</h3>
+          <p class="card-subtitle">Click a key to see what it does and bind it to another action.</p>
         </div>
       </div>
       <div class="keyboard">
@@ -155,16 +155,16 @@ function keymapperHtml() {
       </div>
       <div class="keymap-info" data-keymap-info>
         <div class="keymap-info__binding">
-          <span class="keymap-info__label">Tecla</span>
+          <span class="keymap-info__label">Key</span>
           <kbd class="kbd-hint" data-keymap-key></kbd>
-          <span class="keymap-info__label">Ação</span>
+          <span class="keymap-info__label">Action</span>
           <span data-keymap-action class="font-semibold text-emerald"></span>
         </div>
         <div class="card-actions">
           <select data-keymap-select class="select-control" style="width: 220px;">
             ${KEYMAP_ACTIONS.map(([id, label]) => `<option value="${id}">${escapeHtml(label)}</option>`).join('')}
           </select>
-          <button data-keymap-rebind class="btn btn--primary">Vincular</button>
+          <button data-keymap-rebind class="btn btn--primary">Bind</button>
         </div>
       </div>
     </div>`;
@@ -211,7 +211,7 @@ export function createGameSettingsView(config) {
             <h1 class="page-title text-cyan">${config.icon}${escapeHtml(config.title)}</h1>
             <p class="page-subtitle">${escapeHtml(config.subtitle)}</p>
           </div>
-          <button data-save class="btn btn--primary flex items-center" style="padding: 10px 20px; font-weight: 600;">${SAVE_ICON}<span data-save-label>Salvar e aplicar</span></button>
+          <button data-save class="btn btn--primary flex items-center" style="padding: 10px 20px; font-weight: 600;">${SAVE_ICON}<span data-save-label>Save & Apply</span></button>
         </div>
 
         <div class="card mb-4">
@@ -219,14 +219,14 @@ export function createGameSettingsView(config) {
             <div class="flex items-center gap-4 flex-wrap">
               ${config.profileTarget ? `
               <div class="flex flex-col">
-                <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">O que editar</span>
-                <select data-target class="select-control" style="width: 250px; height: 38px;"><option value="">Arquivos atuais do jogo</option></select>
+                <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">Edit target</span>
+                <select data-target class="select-control" style="width: 250px; height: 38px;"><option value="">Current game files</option></select>
               </div>` : ''}
               <div class="flex flex-col">
-                <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">Comparar com perfil</span>
-                <select data-compare class="select-control" style="width: 250px; height: 38px;"><option value="">Nenhum</option></select>
+                <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">Compare with profile</span>
+                <select data-compare class="select-control" style="width: 250px; height: 38px;"><option value="">None</option></select>
               </div>
-              <button data-sync-all class="btn btn--secondary flex items-center" style="display: none; height: 38px; margin-top: 18px;">${SYNC_ICON}<span data-sync-label>Copiar diferenças</span></button>
+              <button data-sync-all class="btn btn--secondary flex items-center" style="display: none; height: 38px; margin-top: 18px;">${SYNC_ICON}<span data-sync-label>Copy Differences</span></button>
             </div>
           </div>
         </div>
@@ -235,11 +235,11 @@ export function createGameSettingsView(config) {
         ${standardCardsHtml(config.cards)}
 
         <div class="card mb-4">
-          <div class="card-header"><h2 class="card-title text-cyan">Configurações avançadas</h2></div>
+          <div class="card-header"><h2 class="card-title text-cyan">Advanced Settings</h2></div>
           <div class="card-body py-2">
             <div class="flex flex-col mb-4">
-              <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">Buscar nas opções avançadas</span>
-              <input type="search" data-search class="input-control" placeholder="Buscar por configuração ou seção…" style="height: 38px;" />
+              <span class="text-xs text-muted mb-1 uppercase font-semibold tracking-wider">Search advanced settings</span>
+              <input type="search" data-search class="input-control" placeholder="Search by setting or section…" style="height: 38px;" />
             </div>
           </div>
         </div>
@@ -248,8 +248,8 @@ export function createGameSettingsView(config) {
 
         <div class="card" style="margin-top: 24px;">
           <div class="card-body flex justify-between items-center py-4">
-            <div class="text-sm text-muted" data-target-description>Arquivos de configuração do ${escapeHtml(config.gameName)}</div>
-            <button data-save class="btn btn--primary">${SAVE_ICON}<span data-save-label>Salvar e aplicar</span></button>
+            <div class="text-sm text-muted" data-target-description>${escapeHtml(config.gameName)} config files</div>
+            <button data-save class="btn btn--primary">${SAVE_ICON}<span data-save-label>Save & Apply</span></button>
           </div>
         </div>
       </div>`;
@@ -295,7 +295,7 @@ export function createGameSettingsView(config) {
       return Object.keys(other).filter((k) => current[k] !== undefined && !valuesEqual(current[k], other[k]));
     }
 
-    const saveLabel = () => (state?.targetName ? 'Salvar perfil' : 'Salvar e aplicar');
+    const saveLabel = () => (state?.targetName ? 'Save Profile' : 'Save & Apply');
 
     function markDirty() {
       dirty = true;
@@ -310,8 +310,8 @@ export function createGameSettingsView(config) {
       });
       const description = $('[data-target-description]');
       description.textContent = state?.targetName
-        ? `Editando o perfil salvo "${state.targetName}" (os arquivos do jogo não são alterados)`
-        : `Arquivos de configuração do ${config.gameName}`;
+        ? `Editing saved profile "${state.targetName}" (game files are not changed)`
+        : `${config.gameName} config files`;
       saveButtons.forEach((b) => (b.disabled = !state));
     }
 
@@ -331,7 +331,7 @@ export function createGameSettingsView(config) {
         const row = root.querySelector(`[data-row="${index}"]`);
         const missing = controlKeys(control).some((key) => iniValue(state?.ini, key) === undefined);
         row.classList.toggle('setting-row--missing', missing);
-        row.title = missing ? 'Ainda não existe no game.cfg. Altere uma vez dentro do jogo para criá-la.' : '';
+        row.title = missing ? 'Not in game.cfg yet. Change it once in-game to create it.' : '';
 
         controlKeys(control).forEach((key, part) => {
           const input = root.querySelector(`[data-control="${index}"][data-part="${part}"]`);
@@ -386,7 +386,7 @@ export function createGameSettingsView(config) {
             break;
           case 'resolution':
             if (!/^\d+$/.test(input.value) || Number(input.value) < 1) {
-              toast('A resolução precisa ser um número inteiro positivo', 'error');
+              toast('Resolution must be a positive whole number', 'error');
               input.value = original ?? '';
               return;
             }
@@ -459,7 +459,7 @@ export function createGameSettingsView(config) {
         })
         .join('');
 
-      advanced.innerHTML = html || '<div class="empty-state"><p>Nenhuma configuração adicional encontrada nesses arquivos.</p></div>';
+      advanced.innerHTML = html || '<div class="empty-state"><p>No additional settings found in these files.</p></div>';
       applySearch();
     }
 
@@ -485,7 +485,7 @@ export function createGameSettingsView(config) {
     function updateSyncButton() {
       const count = differingKeys().length;
       syncButton.style.display = compare && count ? 'inline-flex' : 'none';
-      $('[data-sync-label]').textContent = `Copiar diferenças (${count})`;
+      $('[data-sync-label]').textContent = `Copy Differences (${count})`;
     }
 
     function renderAll() {
@@ -538,16 +538,16 @@ export function createGameSettingsView(config) {
       const keys = differingKeys();
       if (!keys.length) return;
       const confirmed = await confirmAction({
-        title: 'Copiar diferenças',
-        message: `Copiar ${keys.length} valor(es) de "${compare.name}" para as configurações em edição?\nNada é gravado no disco até você salvar.`,
-        confirmText: 'Copiar',
+        title: 'Copy differences',
+        message: `Copy ${keys.length} value(s) from "${compare.name}" into the settings being edited?\nNothing is written to disk until you save.`,
+        confirmText: 'Copy',
       });
       if (!confirmed) return;
       const other = compareFlat();
       keys.forEach((key) => applyValue(state.ini, state.persisted, key, other[key]));
       markDirty();
       renderAll();
-      toast(`${keys.length} valor(es) copiados de "${compare.name}"`, 'success');
+      toast(`Copied ${keys.length} value(s) from "${compare.name}"`, 'success');
     });
 
     // ── Keymapper ──
@@ -558,7 +558,7 @@ export function createGameSettingsView(config) {
       const binding = findBinding(state?.persisted, selectedKey);
       const actionEl = $('[data-keymap-action]');
       $('[data-keymap-key]').textContent = keyLabel(selectedKey);
-      actionEl.textContent = binding ? actionLabel(binding.name) : 'Nenhuma (sem atalho)';
+      actionEl.textContent = binding ? actionLabel(binding.name) : 'None (unbound)';
       actionEl.className = `font-semibold ${binding ? 'text-emerald' : 'text-muted'}`;
       if (binding && KEYMAP_ACTIONS.some(([id]) => id === binding.name)) $('[data-keymap-select]').value = binding.name;
       info.style.display = 'flex';
@@ -576,7 +576,7 @@ export function createGameSettingsView(config) {
     $('[data-keymap-rebind]')?.addEventListener('click', () => {
       if (!selectedKey || !state) return;
       if (!state.persisted?.files) {
-        toast('Não foi possível carregar o PersistedSettings.json, então os atalhos não podem ser alterados.', 'error');
+        toast('PersistedSettings.json could not be loaded, so keybindings cannot be changed.', 'error');
         return;
       }
       const action = $('[data-keymap-select]').value;
@@ -584,14 +584,14 @@ export function createGameSettingsView(config) {
       markDirty();
       renderAll();
       showBinding();
-      toast(`"${keyLabel(selectedKey)}" agora aciona ${actionLabel(action)}. Salve para aplicar.`, 'success');
+      toast(`"${keyLabel(selectedKey)}" now triggers ${actionLabel(action)}. Save to apply.`, 'success');
     });
 
     // ── Loading ──
 
     async function loadProfileOptions() {
       const profiles = await api.profiles.list().catch((err) => {
-        toast(`Não foi possível listar os perfis: ${errorMessage(err)}`, 'error');
+        toast(`Could not list profiles: ${errorMessage(err)}`, 'error');
         return [];
       });
       const options = profiles.map((p) => `<option value="${escapeHtml(p.name)}">${escapeHtml(p.name)}</option>`).join('');
@@ -601,8 +601,8 @@ export function createGameSettingsView(config) {
         select.innerHTML = `<option value="">${emptyLabel}</option>${options}`;
         select.value = profiles.some((p) => p.name === previous) ? previous : '';
       };
-      fill(targetSelect, 'Arquivos atuais do jogo');
-      fill(compareSelect, 'Nenhum');
+      fill(targetSelect, 'Current game files');
+      fill(compareSelect, 'None');
     }
 
     async function loadTarget() {
@@ -622,7 +622,7 @@ export function createGameSettingsView(config) {
           try {
             persisted = (await api.lol.readKeybindings()).data;
           } catch (err) {
-            toast(`Não foi possível ler o PersistedSettings.json: ${errorMessage(err)}`, 'error');
+            toast(`Could not read PersistedSettings.json: ${errorMessage(err)}`, 'error');
           }
           state = { targetName: '', ini, persisted };
         }
@@ -634,7 +634,7 @@ export function createGameSettingsView(config) {
       } catch (err) {
         state = null;
         updateSaveLabels();
-        advanced.innerHTML = `<div class="empty-state"><h3>Não foi possível carregar as configurações</h3><p>${escapeHtml(errorMessage(err))}</p></div>`;
+        advanced.innerHTML = `<div class="empty-state"><h3>Could not load settings</h3><p>${escapeHtml(errorMessage(err))}</p></div>`;
       }
     }
 
@@ -642,9 +642,9 @@ export function createGameSettingsView(config) {
       const previous = state?.targetName ?? '';
       if (dirty) {
         const discard = await confirmAction({
-          title: 'Descartar alterações?',
-          message: 'Há alterações não salvas. Trocar agora vai descartá-las.',
-          confirmText: 'Descartar',
+          title: 'Discard changes?',
+          message: 'There are unsaved changes. Switching now will discard them.',
+          confirmText: 'Discard',
           danger: true,
         });
         if (!discard) {
@@ -667,7 +667,7 @@ export function createGameSettingsView(config) {
           const profile = await api.profiles.load(name);
           compare = { name, ini: profile.targets?.gameCfg ?? {}, persisted: profile.targets?.persistedSettings ?? {} };
         } catch (err) {
-          toast(`Não foi possível carregar o perfil: ${errorMessage(err)}`, 'error');
+          toast(`Could not load the profile: ${errorMessage(err)}`, 'error');
           compareSelect.value = '';
         }
       }
@@ -676,7 +676,7 @@ export function createGameSettingsView(config) {
 
     async function save() {
       if (!state) return;
-      const busyLabel = state.targetName ? 'Salvando perfil…' : 'Salvando…';
+      const busyLabel = state.targetName ? 'Saving profile…' : 'Saving…';
       await withBusyButtons(saveButtons, busyLabel, async () => {
         try {
           if (state.targetName) {
@@ -685,17 +685,17 @@ export function createGameSettingsView(config) {
               ...profile,
               targets: { ...profile.targets, gameCfg: state.ini, persistedSettings: state.persisted },
             });
-            toast(`Perfil "${state.targetName}" salvo`, 'success');
+            toast(`Profile "${state.targetName}" saved`, 'success');
           } else {
             await api.status.assertGameClosed();
-            await api.history.saveSnapshot(`Antes de salvar as configurações do ${config.gameName}`);
+            await api.history.saveSnapshot(`Before saving ${config.gameName} settings`);
             await api.lol.updateSettings(state.ini);
             if (state.persisted?.files) await api.lol.updateKeybindings(state.persisted);
-            toast(`Configurações do ${config.gameName} salvas`, 'success');
+            toast(`${config.gameName} settings saved`, 'success');
           }
           dirty = false;
         } catch (err) {
-          toast(`Não foi possível salvar: ${errorMessage(err)}`, 'error');
+          toast(`Could not save: ${errorMessage(err)}`, 'error');
         }
       });
       if (!dirty) await loadTarget();

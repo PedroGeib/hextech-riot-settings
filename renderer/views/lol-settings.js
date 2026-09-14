@@ -2,17 +2,17 @@ import { iniKey } from '../lib/settings-model.js';
 import { createGameSettingsView } from './shared/game-settings-view.js';
 
 const SECTION_CATEGORIES = {
-  General: 'Gráficos e motor',
-  Performance: 'Gráficos e motor',
-  ColorPalette: 'Gráficos e motor',
-  Volume: 'Áudio e som',
-  Voice: 'Áudio e som',
-  HUD: 'Interface e HUD',
-  Chat: 'Interface e HUD',
-  LossOfControl: 'Interface e HUD',
-  ItemShop: 'Interface e HUD',
-  FloatingText: 'Interface e HUD',
-  Accessibility: 'Interface e HUD',
+  General: 'Graphics & Engine',
+  Performance: 'Graphics & Engine',
+  ColorPalette: 'Graphics & Engine',
+  Volume: 'Audio & Sound',
+  Voice: 'Audio & Sound',
+  HUD: 'Interface & HUD',
+  Chat: 'Interface & HUD',
+  LossOfControl: 'Interface & HUD',
+  ItemShop: 'Interface & HUD',
+  FloatingText: 'Interface & HUD',
+  Accessibility: 'Interface & HUD',
 };
 
 const TFT_SECTION = /^TFT|Cherry|Strawberry/i;
@@ -20,53 +20,53 @@ const TFT_SECTION = /^TFT|Cherry|Strawberry/i;
 const view = createGameSettingsView({
   id: 'lol',
   gameName: 'League of Legends',
-  title: 'Configurações do League of Legends',
-  subtitle: 'Ajuste as opções principais ou explore as avançadas',
+  title: 'League of Legends Settings',
+  subtitle: 'Adjust the main options or explore the advanced ones',
   icon: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 8px;"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>`,
   keymapper: true,
   profileTarget: true,
   cards: [
     {
-      title: 'Vídeo e tela',
+      title: 'Video & Display',
       controls: [
         {
           type: 'resolution',
           keys: [iniKey('General', 'Width'), iniKey('General', 'Height')],
-          label: 'Resolução',
-          description: 'Largura e altura da janela do jogo.',
+          label: 'Resolution',
+          description: 'Width and height of the game window.',
         },
         {
           type: 'select',
           key: iniKey('General', 'WindowMode'),
-          label: 'Modo de janela',
-          description: 'Tela cheia, janela ou sem bordas.',
+          label: 'Window Mode',
+          description: 'Fullscreen, windowed or borderless.',
           options: [
-            { value: '0', label: 'Tela cheia' },
-            { value: '1', label: 'Janela' },
-            { value: '2', label: 'Sem bordas' },
+            { value: '0', label: 'Fullscreen' },
+            { value: '1', label: 'Windowed' },
+            { value: '2', label: 'Borderless' },
           ],
         },
       ],
     },
     {
-      title: 'Áudio e som',
+      title: 'Audio & Sound',
       controls: [
-        { type: 'percent', key: iniKey('Volume', 'MasterVolume'), label: 'Volume geral', description: 'Volume de todos os sons do jogo.' },
-        { type: 'percent', key: iniKey('Volume', 'MusicVolume'), label: 'Volume da música', description: 'Volume da música de fundo.' },
+        { type: 'percent', key: iniKey('Volume', 'MasterVolume'), label: 'Master Volume', description: 'Volume of all game sounds.' },
+        { type: 'percent', key: iniKey('Volume', 'MusicVolume'), label: 'Music Volume', description: 'Background music volume.' },
       ],
     },
     {
-      title: 'Interface e HUD',
+      title: 'Interface & HUD',
       controls: [
-        { type: 'range', key: iniKey('HUD', 'MinimapScale'), min: 0, max: 3, step: 0.05, label: 'Escala do minimapa', description: 'Tamanho do minimapa.' },
-        { type: 'toggle', key: iniKey('HUD', 'FlipMiniMap'), label: 'Inverter minimapa', description: 'Move o minimapa para o lado esquerdo da tela.' },
+        { type: 'range', key: iniKey('HUD', 'MinimapScale'), min: 0, max: 3, step: 0.05, label: 'Minimap Scale', description: 'Size of the minimap.' },
+        { type: 'toggle', key: iniKey('HUD', 'FlipMiniMap'), label: 'Flip Minimap', description: 'Move the minimap to the left side of the screen.' },
       ],
     },
   ],
-  categories: ['Gráficos e motor', 'Interface e HUD', 'Áudio e som', 'Atalhos e controles', 'Outras configurações'],
+  categories: ['Graphics & Engine', 'Interface & HUD', 'Audio & Sound', 'Keybindings & Inputs', 'Other Settings'],
   categorize: (info) => {
-    if (info.source === 'persisted' && info.fileName.toLowerCase() === 'input.ini') return 'Atalhos e controles';
-    return SECTION_CATEGORIES[info.sectionName] ?? 'Outras configurações';
+    if (info.source === 'persisted' && info.fileName.toLowerCase() === 'input.ini') return 'Keybindings & Inputs';
+    return SECTION_CATEGORIES[info.sectionName] ?? 'Other Settings';
   },
   iniSection: (section) => !TFT_SECTION.test(section),
   persistedSetting: (setting) => !TFT_SECTION.test(setting.sectionName),
